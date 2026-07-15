@@ -1,0 +1,22 @@
+name: Validate Streamlit repository
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Verify repository structure and local imports
+        run: python verify_repository.py
+      - name: Run core tests
+        run: python -m pytest -q
+      - name: Compile Python files
+        run: python -m compileall -q streamlit_app.py lingglot

@@ -1,0 +1,22 @@
+<svg class="lingglot-character-svg" width="320" height="320"
+     viewBox="0 0 100 100" role="img" aria-label="Friendly Lingglot character"
+     xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="asset-sol-gradient-4" cx="50%" cy="40%" r="70%">
+      <stop offset="0%" stop-color="#F8C2B0"/>
+      <stop offset="100%" stop-color="#EE9F89"/>
+    </radialGradient>
+  </defs>
+  <rect width="100" height="100" rx="24" fill="#FFF2E5"/><circle cx="18" cy="18" r="15" fill="#FFCBB6" opacity=".45"/><circle cx="84" cy="82" r="22" fill="#FFC3E5" opacity=".35"/>
+  <circle cx="28" cy="22" r="11" fill="#EE9F89"/><circle cx="72" cy="22" r="11" fill="#EE9F89"/>
+  <circle cx="50" cy="55" r="32" fill="url(#asset-sol-gradient-4)"/>
+  <ellipse cx="50" cy="63" rx="17" ry="12" fill="#FFF6EE" opacity=".34"/>
+  <circle cx="35" cy="62" r="4" fill="#F49AB0" opacity=".55"/>
+  <circle cx="65" cy="62" r="4" fill="#F49AB0" opacity=".55"/>
+  <circle cx="40" cy="52" r="3.2" fill="#2B1D24"/>
+  <circle cx="60" cy="52" r="3.2" fill="#2B1D24"/>
+  <circle cx="41" cy="51" r="1" fill="#FFFFFF"/>
+  <circle cx="61" cy="51" r="1" fill="#FFFFFF"/>
+  <path d="M44 66 Q50 71 56 66" stroke="#2B1D24" stroke-width="2"
+        stroke-linecap="round" fill="none"/>
+</svg>

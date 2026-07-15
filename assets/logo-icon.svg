@@ -1,0 +1,17 @@
+<svg width="64" height="64" viewBox="0 0 64 64"
+     xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lingglot logo">
+  <defs>
+    <linearGradient id="lingglot-logo-gradient" x1="6" y1="8" x2="58" y2="58"
+                    gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF6A3D"/>
+      <stop offset=".56" stop-color="#FF4F9A"/>
+      <stop offset="1" stop-color="#FF4DC4"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 10h40a8 8 0 0 1 8 8v25a8 8 0 0 1-8 8H31L18 60v-9h-6a8 8 0 0 1-8-8V18a8 8 0 0 1 8-8Z"
+        fill="url(#lingglot-logo-gradient)"/>
+  <circle cx="24" cy="30" r="3" fill="#FFF9ED"/>
+  <circle cx="40" cy="30" r="3" fill="#FFF9ED"/>
+  <path d="M24 39c4.5 4 11.5 4 16 0" stroke="#FFF9ED" stroke-width="3"
+        stroke-linecap="round" fill="none"/>
+</svg>
