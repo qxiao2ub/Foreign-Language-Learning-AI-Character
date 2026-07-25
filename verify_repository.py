@@ -14,6 +14,7 @@ REQUIRED_PATHS = (
     ROOT / "assets" / "styles.css",
     ROOT / "lingglot" / "__init__.py",
     ROOT / "lingglot" / "core.py",
+    ROOT / "lingglot" / "language_detection.py",
     ROOT / "lingglot" / "visuals.py",
 )
 
@@ -25,7 +26,12 @@ if missing:
     raise SystemExit(1)
 
 sys.path.insert(0, str(ROOT))
-for module_name in ("lingglot", "lingglot.core", "lingglot.visuals"):
+for module_name in (
+    "lingglot",
+    "lingglot.core",
+    "lingglot.language_detection",
+    "lingglot.visuals",
+):
     module = importlib.import_module(module_name)
     print(f"Imported {module_name} from {Path(module.__file__).relative_to(ROOT)}")
 

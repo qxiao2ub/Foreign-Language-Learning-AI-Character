@@ -14,7 +14,7 @@ The interface is implemented natively in Streamlit, so it can be deployed direct
 - Scikit-learn learner-profile clustering
 - Vocabulary, role-play, and sentence-expansion mini-games
 - Session analytics and CSV history download
-- English-practice guard for Chinese input
+- Multilingual input guard for all 10 supported target languages, with localized correction prompts
 - Optional local Hugging Face generation with `google/flan-t5-small`
 
 ## Repository structure
@@ -24,6 +24,7 @@ The interface is implemented natively in Streamlit, so it can be deployed direct
 |-- streamlit_app.py              # Streamlit entrypoint
 |-- lingglot/
 |   |-- core.py                    # AI, scoring, bandit, and clustering logic
+|   |-- language_detection.py       # Multilingual script and language validation
 |   |-- visuals.py                 # HTML and SVG visual helpers
 |   `-- __init__.py
 |-- assets/
@@ -64,6 +65,17 @@ On Windows PowerShell, activate the environment with:
 ```
 
 The default app uses the built-in rule-based fallback and does not need an API key.
+
+## Multilingual target-language guard
+
+The conversation page now validates input for every supported target language:
+English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese,
+Korean, and Arabic. The detector combines Unicode scripts with a lightweight
+word and character n-gram model. Clear mismatches receive a localized request
+to continue in the selected target language and earn zero points. Ambiguous
+single words, names, loanwords, and shared Spanish/Portuguese vocabulary are
+allowed rather than being rejected. No external language-detection package or
+API key is required.
 
 ## Optional Hugging Face mode
 

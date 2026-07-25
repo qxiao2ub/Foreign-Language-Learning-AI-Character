@@ -19,6 +19,13 @@ import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
+from .language_detection import (
+    PRACTICE_REQUESTS,
+    contains_han_characters,
+    detect_input_language,
+    should_reject_for_target,
+)
+
 APP_NAME = "Lingglot - AI Language Learning"
 AUTHOR = "Isabella Fu"
 MENTOR = "Qingyang Xiao"
@@ -299,26 +306,43 @@ def generate_with_llm(
 def contains_chinese_characters(text: str) -> bool:
     """Return True when learner input contains Chinese CJK characters."""
 
-    return bool(re.search(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]", text))
+    return contains_han_characters(text)
 
 
 def validate_target_language_input(
     user_message: str,
     target_language: str,
 ) -> Optional[Dict[str, Any]]:
-    """Return a tutor response when the learner uses the wrong language."""
+    """Return tutor guidance when the message clearly uses another language.
 
-    if target_language == "English" and contains_chinese_characters(user_message):
-        return {
-            "ai_reply": "Please speak and practice in English.",
-            "feedback": (
-                "Your target practice language is English. Try rewriting your "
-                "message in English so Luna can help you improve."
-            ),
-            "points": 0,
-            "llm_error": None,
-        }
-    return None
+    Detection is conservative: ambiguous single words and names are accepted,
+    while clear mismatches across all supported languages receive a localized
+    request to continue in the currently selected practice language.
+    """
+
+    should_reject, detected_language, confidence = should_reject_for_target(
+        user_message,
+        target_language,
+    )
+    if not should_reject:
+        return None
+
+    detected_description = detected_language or "another language"
+    return {
+        "ai_reply": PRACTICE_REQUESTS.get(
+            target_language,
+            f"Please speak and practice in {target_language}.",
+        ),
+        "feedback": (
+            f"Your target practice language is {target_language}, but your "
+            f"message appears to be {detected_description}. Try rewriting your "
+            f"message in {target_language} so Luna can help you improve."
+        ),
+        "points": 0,
+        "llm_error": None,
+        "detected_language": detected_language,
+        "detection_confidence": confidence,
+    }
 
 
 def estimate_mistakes_simple(text: str) -> int:

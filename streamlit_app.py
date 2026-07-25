@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 _REQUIRED_LOCAL_FILES = (
     ROOT / "lingglot" / "__init__.py",
     ROOT / "lingglot" / "core.py",
+    ROOT / "lingglot" / "language_detection.py",
     ROOT / "lingglot" / "visuals.py",
 )
 _missing_local_files = [path for path in _REQUIRED_LOCAL_FILES if not path.is_file()]
@@ -36,6 +37,7 @@ requirements.txt
 lingglot/
   __init__.py
   core.py
+  language_detection.py
   visuals.py
 assets/
 .streamlit/config.toml""",
