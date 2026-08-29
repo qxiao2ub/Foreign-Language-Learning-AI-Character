@@ -1059,3 +1059,63 @@ button[data-testid="stBaseButton-primary"]:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Conversation progress card: replaces the former Total points stat. */
+.stat-progress-chip {
+  display: flex;
+  min-height: 7.25rem;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.stat-progress-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.stat-progress-heading span {
+  margin-top: 0;
+  color: var(--muted-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.stat-progress-heading strong {
+  display: inline;
+  flex: 0 0 auto;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.stat-progress-track {
+  position: relative;
+  width: 100%;
+  height: 0.72rem;
+  margin-top: 0.9rem;
+  overflow: hidden;
+  border: 1px solid rgba(241, 132, 109, 0.18);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 231, 213, 0.95), rgba(255, 230, 242, 0.95));
+  box-shadow: inset 0 1px 3px rgba(86, 49, 41, 0.06);
+}
+
+.stat-progress-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff7b61 0%, #ff5b8f 55%, #e95bb1 100%);
+  box-shadow: 0 0 14px rgba(255, 91, 143, 0.22);
+  transition: width 320ms ease;
+}
+
+.stat-progress-chip small {
+  display: block;
+  margin-top: 0.5rem;
+  color: #a47e75;
+  font-size: 0.65rem;
+  line-height: 1.35;
+}

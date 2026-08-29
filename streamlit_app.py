@@ -81,7 +81,7 @@ from lingglot.visuals import (
     hero_phone_html,
     pills_html,
     progress_tip_html,
-    stat_strip_html,
+    progress_stat_strip_html,
 )
 
 ASSET_DIR = ROOT / "assets"
@@ -402,14 +402,17 @@ def render_practice() -> None:
     with chat_col:
         with st.container(key="practice-chat"):
             profile = predict_learner_profile(state)
+            practice_progress = min(100, max(0, state.total_points))
             st.html(
-                stat_strip_html(
+                progress_stat_strip_html(
+                    practice_progress,
                     {
-                        "Total points": state.total_points,
                         "Conversation turns": state.conversation_turns,
                         "Current level": state.difficulty,
                         "Learner profile": profile,
-                    }
+                    },
+                    label="Practice progress",
+                    helper="Toward your 100-point practice goal",
                 )
             )
 

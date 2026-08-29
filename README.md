@@ -4,6 +4,11 @@ This repository combines the supplied Lovable visual direction with the supplied
 
 The interface is implemented natively in Streamlit, so it can be deployed directly from GitHub on Streamlit Community Cloud. The React/Tailwind source is not embedded at runtime. Its visual system was translated into Streamlit theme configuration, CSS, responsive layouts, and lightweight SVG assets.
 
+
+### Conversation progress bar
+
+The Conversation dashboard replaces the former **Total points** summary card with a Lovable-styled **Practice progress** bar. The bar fills from 0% to 100% as the learner earns points toward a 100-point practice goal. Total points remain available on the dedicated Progress page and in exported practice history.
+
 ## What is included
 
 - Lovable-inspired cream background, coral-to-magenta gradients, rounded cards, shadows, typography, phone mockup, and friendly character art

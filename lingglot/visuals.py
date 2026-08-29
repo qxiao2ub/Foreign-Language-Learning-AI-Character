@@ -230,6 +230,46 @@ def stat_strip_html(items: Mapping[str, str | int | float]) -> str:
     return '<div class="stat-strip">' + "".join(cards) + "</div>"
 
 
+def progress_stat_strip_html(
+    progress_percent: int | float,
+    items: Mapping[str, str | int | float],
+    *,
+    label: str = "Practice progress",
+    helper: str = "Toward your 100-point practice goal",
+) -> str:
+    """Render a progress bar as the first stat card, followed by stat chips.
+
+    The progress value is clamped to 0-100 so the generated HTML stays valid
+    even if a caller passes a value outside the expected range.
+    """
+
+    progress = max(0, min(100, int(round(float(progress_percent)))))
+    cards = [
+        f"""
+<div class="stat-chip stat-progress-chip">
+  <div class="stat-progress-heading">
+    <span>{escape(label)}</span>
+    <strong>{progress}%</strong>
+  </div>
+  <div class="stat-progress-track" role="progressbar" aria-label="{escape(label)}"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="{progress}">
+    <div class="stat-progress-fill" style="width:{progress}%"></div>
+  </div>
+  <small>{escape(helper)}</small>
+</div>
+""".strip()
+    ]
+
+    for item_label, value in items.items():
+        cards.append(
+            f"""
+<div class="stat-chip"><strong>{escape(str(value))}</strong><span>{escape(item_label)}</span></div>
+""".strip()
+        )
+
+    return '<div class="stat-strip">' + "".join(cards) + "</div>"
+
+
 def pills_html(items: Iterable[str]) -> str:
     return '<div class="pill-row">' + "".join(
         f'<span class="soft-pill">{escape(item)}</span>' for item in items
