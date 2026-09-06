@@ -12,8 +12,10 @@ The Conversation dashboard replaces the former **Total points** summary card wit
 ## What is included
 
 - Lovable-inspired cream background, coral-to-magenta gradients, rounded cards, shadows, typography, phone mockup, and friendly character art
-- Top navigation with Home, Conversation, Mini-games, Progress, and About pages
+- Top navigation with Home, Conversation, Video call, Mini-games, Progress, and About pages
 - AI character conversation with Luna
+- Live WebRTC camera + microphone video-call practice with a Luna call stage
+- Native voice-note capture plus browser text-to-speech for Luna replies
 - Tutor feedback, rewards, and cumulative points
 - Epsilon-greedy adaptive difficulty selection
 - Scikit-learn learner-profile clustering
@@ -43,18 +45,19 @@ The Conversation dashboard replaces the former **Total points** summary card wit
 |   `-- test_core.py
 |-- tools/
 |   `-- generate_assets.py
-|-- requirements.txt               # Lightweight deployment dependencies
+|-- requirements.txt               # Streamlit + WebRTC deployment dependencies
 |-- requirements-full.txt          # Optional local Hugging Face dependencies
 |-- requirements-dev.txt
 |-- LICENSE
 `-- docs/
     |-- DESIGN_MAPPING.md
-    `-- INTEGRATION_NOTES.md
+    |-- INTEGRATION_NOTES.md
+    `-- VIDEO_CALL_GUIDE.md
 ```
 
 ## Run locally
 
-Use Python 3.11 or 3.12 for the most predictable ML package compatibility.
+Use Python 3.12-3.14. The pinned WebRTC release includes Python 3.14-compatible media dependencies.
 
 ```bash
 python -m venv .venv
@@ -70,6 +73,30 @@ On Windows PowerShell, activate the environment with:
 ```
 
 The default app uses the built-in rule-based fallback and does not need an API key.
+
+## Video-call practice
+
+Open **Video call** from the top navigation. The page combines:
+
+- a large animated Luna call stage
+- live browser camera and microphone through `streamlit-webrtc`
+- camera and microphone toggle controls
+- the same multilingual guard, adaptive difficulty, scoring, and learner profile used by Conversation
+- a live-style transcript panel for submitting the sentence you spoke
+- Streamlit's native 16 kHz voice-note recorder
+- a **Hear Luna** control that uses the browser's speech-synthesis voice for the selected language
+
+The default build intentionally avoids a required speech-to-text cloud API. The learner speaks naturally on camera, then types the sentence into the transcript box; this keeps the public Streamlit deployment key-free and predictable while preserving real camera/microphone interaction.
+
+Remote WebRTC uses Google's public STUN server by default. On restrictive school, enterprise, or carrier networks a TURN relay may be required. If you have TURN credentials, add these Streamlit secrets without committing them to GitHub:
+
+```toml
+TURN_URL = "turn:your-turn-host:3478"
+TURN_USERNAME = "your-username"
+TURN_CREDENTIAL = "your-password-or-token"
+```
+
+Camera and microphone access also require browser permission and HTTPS. Streamlit Community Cloud provides HTTPS. Lingglot does not intentionally save the live WebRTC media stream.
 
 ## Multilingual target-language guard
 

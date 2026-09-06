@@ -274,3 +274,65 @@ def pills_html(items: Iterable[str]) -> str:
     return '<div class="pill-row">' + "".join(
         f'<span class="soft-pill">{escape(item)}</span>' for item in items
     ) + "</div>"
+
+
+def video_call_stage_html(
+    *,
+    target_language: str,
+    difficulty: str,
+    is_live: bool,
+    last_reply: str = "",
+) -> str:
+    """Render the AI partner side of the video-call experience."""
+
+    status_label = "LIVE" if is_live else "READY"
+    status_class = "is-live" if is_live else "is-ready"
+    luna = character_svg(0, size=260, id_prefix="video-call-luna", include_background=False)
+    reply = escape(last_reply or "Start the camera, then say or type a sentence to begin.")
+    return f"""
+<div class="video-call-ai-stage {status_class}" aria-label="AI language video call with Luna">
+  <div class="video-call-stage-top">
+    <span class="video-call-live-badge"><i></i>{status_label}</span>
+    <span class="video-call-lesson-chip">{escape(target_language)} · {escape(difficulty)}</span>
+  </div>
+  <div class="video-call-orbit orbit-one"></div>
+  <div class="video-call-orbit orbit-two"></div>
+  <div class="video-call-avatar-wrap">
+    <div class="video-call-avatar-glow"></div>
+    <div class="video-call-avatar">{luna}</div>
+    <div class="video-call-speech-ring ring-one"></div>
+    <div class="video-call-speech-ring ring-two"></div>
+  </div>
+  <div class="video-call-partner-name">
+    <strong>Luna</strong>
+    <span>Your AI language partner</span>
+  </div>
+  <div class="video-call-caption">
+    <small>Latest reply</small>
+    <p>{reply}</p>
+  </div>
+  <div class="video-call-wave" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+  </div>
+</div>
+""".strip()
+
+
+def video_call_status_html(
+    *,
+    camera_live: bool,
+    target_language: str,
+    difficulty: str,
+) -> str:
+    """Render a compact call-status strip below the media stage."""
+
+    camera = "Connected" if camera_live else "Ready to connect"
+    camera_class = "ok" if camera_live else "idle"
+    return f"""
+<div class="video-call-status-strip">
+  <span class="video-call-status-item {camera_class}"><i></i>Camera + mic: {escape(camera)}</span>
+  <span class="video-call-status-item">Practice: {escape(target_language)}</span>
+  <span class="video-call-status-item">Level: {escape(difficulty)}</span>
+</div>
+""".strip()
