@@ -303,6 +303,51 @@ def generate_with_llm(
         return fallback, str(exc)
 
 
+def ensure_target_language_reply(
+    ai_reply: str,
+    target_language: str,
+    user_message: str,
+    difficulty: str,
+) -> Tuple[str, bool, Optional[str], float]:
+    """Guarantee that Luna's answer uses the selected practice language.
+
+    Local text-generation models occasionally ignore the prompt and answer in
+    English.  The existing conservative language detector is reused here.  A
+    clearly mismatched answer is replaced with the localized deterministic
+    fallback, while short or ambiguous answers are left untouched.
+
+    Returns ``(reply, replaced, detected_language, confidence)``.
+    """
+
+    normalized_reply = str(ai_reply or "").strip()
+    fallback = fallback_character_reply(
+        user_message,
+        target_language,
+        difficulty,
+    )
+    if not normalized_reply:
+        return fallback, True, None, 0.0
+
+    should_replace, detected_language, confidence = should_reject_for_target(
+        normalized_reply,
+        target_language,
+    )
+    if should_replace:
+        return fallback, True, detected_language, confidence
+
+    # A very short generic Latin reply (for example, "Okay") can be too
+    # ambiguous for language identification.  For non-English lessons, prefer
+    # the known localized fallback rather than risk speaking English.
+    if (
+        target_language != "English"
+        and detected_language is None
+        and sum(character.isalpha() for character in normalized_reply) >= 2
+    ):
+        return fallback, True, None, confidence
+
+    return normalized_reply, False, detected_language, confidence
+
+
 def contains_chinese_characters(text: str) -> bool:
     """Return True when learner input contains Chinese CJK characters."""
 
@@ -574,6 +619,17 @@ def language_learning_turn(
         fallback_character_reply(user_message, target_language, difficulty),
         use_llm=use_llm,
     )
+    (
+        ai_reply,
+        reply_language_guarded,
+        reply_detected_language,
+        reply_detection_confidence,
+    ) = ensure_target_language_reply(
+        ai_reply,
+        target_language,
+        user_message,
+        difficulty,
+    )
     feedback, feedback_error = generate_with_llm(
         build_feedback_prompt(user_message, target_language, difficulty),
         fallback_feedback(user_message, target_language, difficulty),
@@ -603,6 +659,9 @@ def language_learning_turn(
         "difficulty": difficulty,
         "bandit": bandit.summary(),
         "llm_error": chat_error or feedback_error,
+        "reply_language_guarded": reply_language_guarded,
+        "reply_detected_language": reply_detected_language,
+        "reply_detection_confidence": reply_detection_confidence,
     }
     return result, state, bandit
 

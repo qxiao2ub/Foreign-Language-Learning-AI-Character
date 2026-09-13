@@ -4,23 +4,11 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
-import json
 import sys
 from typing import Any, Dict
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
-
-try:
-    from streamlit_webrtc import WebRtcMode, webrtc_streamer
-
-    WEBRTC_AVAILABLE = True
-except Exception:
-    WebRtcMode = None
-    webrtc_streamer = None
-    WEBRTC_AVAILABLE = False
-
 # Streamlit Community Cloud executes the app from the repository root. Add the
 # entrypoint directory explicitly so the bundled local package is importable
 # even when the launcher changes sys.path behavior.
@@ -33,6 +21,7 @@ _REQUIRED_LOCAL_FILES = (
     ROOT / "lingglot" / "core.py",
     ROOT / "lingglot" / "language_detection.py",
     ROOT / "lingglot" / "visuals.py",
+    ROOT / "lingglot" / "realtime_call.py",
 )
 _missing_local_files = [path for path in _REQUIRED_LOCAL_FILES if not path.is_file()]
 if _missing_local_files:
@@ -50,6 +39,7 @@ lingglot/
   core.py
   language_detection.py
   visuals.py
+  realtime_call.py
 assets/
 .streamlit/config.toml""",
         language="text",
@@ -84,6 +74,7 @@ from lingglot.core import (
     predict_learner_profile,
     sentence_expansion_challenge,
 )
+from lingglot.realtime_call import mount_realtime_call
 from lingglot.visuals import (
     character_grid_html,
     character_svg,
@@ -93,8 +84,6 @@ from lingglot.visuals import (
     pills_html,
     progress_tip_html,
     progress_stat_strip_html,
-    video_call_stage_html,
-    video_call_status_html,
 )
 
 ASSET_DIR = ROOT / "assets"
@@ -136,81 +125,20 @@ LANGUAGE_VOICE_LOCALES = {
 }
 
 
-def build_rtc_configuration() -> Dict[str, Any]:
-    """Return STUN config plus optional TURN credentials from Streamlit secrets."""
+VIDEO_CALL_COMPONENT_KEY = "lingglot_realtime_call"
 
-    ice_servers: list[Dict[str, Any]] = [
-        {"urls": ["stun:stun.l.google.com:19302"]}
-    ]
-    try:
-        turn_url = st.secrets.get("TURN_URL")
-        turn_username = st.secrets.get("TURN_USERNAME")
-        turn_credential = st.secrets.get("TURN_CREDENTIAL")
-    except Exception:
-        turn_url = turn_username = turn_credential = None
-
-    if turn_url and turn_username and turn_credential:
-        ice_servers.append(
-            {
-                "urls": [str(turn_url)],
-                "username": str(turn_username),
-                "credential": str(turn_credential),
-            }
-        )
-    return {"iceServers": ice_servers}
-
-
-def render_browser_tts(text: str, language: str) -> None:
-    """Provide a browser-native text-to-speech control for Luna's reply."""
-
-    if not text:
-        return
-    payload = json.dumps(str(text))
-    locale = json.dumps(LANGUAGE_VOICE_LOCALES.get(language, "en-US"))
-    components.html(
-        f"""
-<!doctype html>
-<html>
-<head>
-<style>
-  body {{ margin: 0; font-family: system-ui, sans-serif; background: transparent; }}
-  .tts-row {{ display: flex; gap: 8px; align-items: center; }}
-  button {{
-    border: 1px solid #eddad0; border-radius: 999px; padding: 9px 14px;
-    background: rgba(255,255,255,.92); color: #351c1c; font-weight: 700;
-    cursor: pointer; box-shadow: 0 5px 18px -12px rgba(83,32,25,.45);
-  }}
-  button:hover {{ border-color: #ff9173; background: #fff8f1; }}
-  .stop {{ padding-inline: 11px; }}
-  span {{ color: #795b56; font-size: 12px; }}
-</style>
-</head>
-<body>
-<div class="tts-row">
-  <button id="speak">🔊 Hear Luna</button>
-  <button id="stop" class="stop" aria-label="Stop speech">■</button>
-  <span>Uses your browser's installed voice.</span>
-</div>
-<script>
-const text = {payload};
-const locale = {locale};
-const speak = () => {{
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = locale;
-  utterance.rate = 0.92;
-  utterance.pitch = 1.04;
-  window.speechSynthesis.speak(utterance);
-}};
-document.getElementById('speak').addEventListener('click', speak);
-document.getElementById('stop').addEventListener('click', () => window.speechSynthesis.cancel());
-</script>
-</body>
-</html>
-""",
-        height=56,
-        scrolling=False,
-    )
+VIDEO_CALL_GREETINGS = {
+    "English": "Hello! I am Luna. Tell me one thing about your day.",
+    "Spanish": "¡Hola! Soy Luna. Cuéntame una cosa sobre tu día.",
+    "French": "Bonjour ! Je suis Luna. Raconte-moi une chose sur ta journée.",
+    "German": "Hallo! Ich bin Luna. Erzähl mir eine Sache über deinen Tag.",
+    "Italian": "Ciao! Sono Luna. Raccontami una cosa della tua giornata.",
+    "Portuguese": "Olá! Eu sou a Luna. Conte-me uma coisa sobre o seu dia.",
+    "Chinese": "你好！我是 Luna。请告诉我今天发生的一件事。",
+    "Japanese": "こんにちは！ルナです。今日のことを一つ教えてください。",
+    "Korean": "안녕하세요! 저는 루나예요. 오늘 있었던 일 한 가지를 말해 주세요.",
+    "Arabic": "مرحبًا! أنا لونا. أخبرني بشيء واحد عن يومك.",
+}
 
 
 def submit_video_call_turn(
@@ -220,13 +148,23 @@ def submit_video_call_turn(
     *,
     auto_adapt: bool,
     use_llm: bool,
-) -> None:
-    """Run one video-call transcript through the same learning engine."""
+    source: str = "speech",
+    event_id: str = "",
+) -> Dict[str, Any] | None:
+    """Run one finalized live transcript through the learning engine."""
 
-    prompt = transcript.strip()
+    prompt = transcript.strip()[:1200]
     if not prompt:
-        return
-    st.session_state.video_messages.append({"role": "user", "content": prompt})
+        return None
+
+    st.session_state.video_messages.append(
+        {
+            "role": "user",
+            "content": prompt,
+            "source": source,
+            "event_id": event_id,
+        }
+    )
     result, updated_state, updated_bandit = language_learning_turn(
         st.session_state.learner_state,
         st.session_state.bandit,
@@ -238,7 +176,10 @@ def submit_video_call_turn(
     )
     st.session_state.learner_state = updated_state
     st.session_state.bandit = updated_bandit
-    st.session_state.video_last_reply = result["ai_reply"]
+    st.session_state.video_last_reply = str(result["ai_reply"])
+    st.session_state.video_reply_id = int(
+        st.session_state.get("video_reply_id", 0)
+    ) + 1
     st.session_state.video_messages.append(
         {
             "role": "assistant",
@@ -250,8 +191,70 @@ def submit_video_call_turn(
             "profile": result["profile"],
             "bandit": result["bandit"],
             "llm_error": result.get("llm_error"),
+            "event_id": event_id,
         }
     )
+    return result
+
+
+def _component_trigger_value(component_key: str, trigger_name: str) -> Any:
+    """Read a Components V2 trigger from Session State safely."""
+
+    component_state = st.session_state.get(component_key)
+    if component_state is None:
+        return None
+    if isinstance(component_state, dict):
+        return component_state.get(trigger_name)
+    return getattr(component_state, trigger_name, None)
+
+
+def handle_realtime_video_utterance() -> None:
+    """Process one finalized browser speech-recognition turn."""
+
+    event = _component_trigger_value(VIDEO_CALL_COMPONENT_KEY, "utterance")
+    if not isinstance(event, dict):
+        return
+
+    event_id = str(event.get("id", "")).strip()
+    if not event_id or event_id == st.session_state.get("video_last_event_id"):
+        return
+
+    # Mark the event before generation so an error cannot cause a duplicate turn.
+    st.session_state.video_last_event_id = event_id
+    st.session_state.video_processing_error = None
+
+    transcript = str(event.get("text", "")).strip()[:1200]
+    if not transcript:
+        return
+
+    state: LearnerState = st.session_state.learner_state
+    target_language = str(
+        st.session_state.get("video_target_language_widget", state.target_language)
+    )
+    if target_language not in SUPPORTED_LANGUAGES:
+        target_language = state.target_language
+
+    difficulty = str(
+        st.session_state.get("video_difficulty_widget", state.difficulty)
+    )
+    if difficulty not in DIFFICULTY_LEVELS:
+        difficulty = "Beginner"
+
+    try:
+        submit_video_call_turn(
+            transcript,
+            target_language,
+            difficulty,
+            auto_adapt=bool(
+                st.session_state.get("video_auto_adapt_widget", True)
+            ),
+            use_llm=bool(st.session_state.get("video_use_llm_widget", False)),
+            source=str(event.get("source", "speech")),
+            event_id=event_id,
+        )
+    except Exception as exc:  # pragma: no cover - deployment safety path
+        st.session_state.video_processing_error = str(exc)
+
 
 def default_messages() -> list[Dict[str, Any]]:
     return [
@@ -291,9 +294,11 @@ def initialize_session_state() -> None:
                 ),
             }
         ],
-        "video_last_reply": (
-            "Start the camera, then say or type a sentence to begin."
-        ),
+        "video_last_reply": VIDEO_CALL_GREETINGS["English"],
+        "video_reply_id": 0,
+        "video_reset_token": 0,
+        "video_last_event_id": "",
+        "video_processing_error": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -323,12 +328,15 @@ def reset_all_state() -> None:
         "sentence_draft",
         "video_messages",
         "video_last_reply",
+        "video_reply_id",
+        "video_reset_token",
+        "video_last_event_id",
+        "video_processing_error",
+        VIDEO_CALL_COMPONENT_KEY,
         "video_target_language_widget",
         "video_difficulty_widget",
         "video_auto_adapt_widget",
         "video_use_llm_widget",
-        "video_transcript_input",
-        "video_voice_note",
     ]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
@@ -661,12 +669,12 @@ def render_practice() -> None:
 
 def render_video_call() -> None:
     render_page_intro(
-        "Live AI practice",
-        "Video call with Luna",
+        "Real-time AI practice",
+        "Live video call with Luna",
         (
-            "Turn on your camera and microphone for a face-to-face practice "
-            "experience. Use the live transcript box for the sentence you say, "
-            "and Luna will respond with the same adaptive AI, feedback, and points."
+            "See your camera live, speak naturally, watch an interim transcript "
+            "appear word by word, and receive Luna's spoken response in the "
+            "selected learning language after every finalized sentence."
         ),
     )
 
@@ -702,176 +710,112 @@ def render_video_call() -> None:
             "Adaptive level",
             value=True,
             key="video_auto_adapt_widget",
-            help="Let the epsilon-greedy bandit adapt the difficulty after each turn.",
+            help="Let the epsilon-greedy bandit adapt the level after each turn.",
         )
     with settings_four:
         use_llm = st.toggle(
             "Local LLM",
             value=False,
             key="video_use_llm_widget",
-            help=f"Optional {MODEL_NAME} mode; the fast fallback works without it.",
+            help=f"Optional {MODEL_NAME} mode; the multilingual fallback works without it.",
         )
 
     state.target_language = target_language
+    greeting = VIDEO_CALL_GREETINGS.get(
+        target_language,
+        VIDEO_CALL_GREETINGS["English"],
+    )
 
-    ai_col, self_col = st.columns([0.64, 0.36], gap="large", vertical_alignment="top")
+    # Before the learner's first live turn, keep Luna's greeting synchronized
+    # with the selected practice language.
+    if int(st.session_state.get("video_reply_id", 0)) == 0:
+        st.session_state.video_last_reply = greeting
+        if not any(
+            message.get("role") == "user"
+            for message in st.session_state.video_messages
+        ):
+            st.session_state.video_messages = [
+                {"role": "assistant", "content": greeting}
+            ]
 
-    webrtc_ctx = None
-    with self_col:
-        with st.container(key="video-self-card"):
-            st.markdown("### Your camera")
-            st.caption("Allow camera + microphone access, then press START.")
-            if WEBRTC_AVAILABLE and webrtc_streamer is not None and WebRtcMode is not None:
-                webrtc_ctx = webrtc_streamer(
-                    key="lingglot-video-call-media",
-                    mode=WebRtcMode.SENDONLY,
-                    rtc_configuration=build_rtc_configuration(),
-                    media_stream_constraints={
-                        "video": {
-                            "width": {"ideal": 640},
-                            "height": {"ideal": 480},
-                            "facingMode": "user",
-                        },
-                        "audio": True,
-                    },
-                    media_toggle_controls=True,
-                    video_html_attrs={
-                        "autoPlay": True,
-                        "controls": False,
-                        "muted": True,
-                        "playsInline": True,
-                    },
-                )
-            else:
-                st.warning(
-                    "Live WebRTC is not installed in this environment. "
-                    "A camera snapshot fallback is available below."
-                )
-                st.camera_input("Camera preview", key="video-camera-fallback")
+    st.caption(
+        "Use the HTTPS Streamlit site in Chrome or Edge for the most reliable "
+        "continuous speech recognition. Camera video stays in your browser and "
+        "is not recorded or uploaded by this app."
+    )
 
-            st.caption(
-                "Media is used for the live session and is not saved by the "
-                "Lingglot app. Browser/device permissions control camera and mic access."
-            )
+    if st.session_state.get("video_processing_error"):
+        st.error(
+            "Luna could not process the last sentence: "
+            f"{st.session_state.video_processing_error}"
+        )
 
-    is_live = bool(webrtc_ctx is not None and webrtc_ctx.state.playing)
-    with ai_col:
-        with st.container(key="video-call-stage"):
-            st.html(
-                video_call_stage_html(
-                    target_language=target_language,
-                    difficulty=difficulty,
-                    is_live=is_live,
-                    last_reply=str(st.session_state.video_last_reply),
-                )
-            )
-            st.html(
-                video_call_status_html(
-                    camera_live=is_live,
-                    target_language=target_language,
-                    difficulty=difficulty,
-                )
-            )
-            render_browser_tts(
-                str(st.session_state.video_last_reply),
-                target_language,
-            )
+    with st.container(key="realtime-video-call-container"):
+        mount_realtime_call(
+            target_language=target_language,
+            locale=LANGUAGE_VOICE_LOCALES.get(target_language, "en-US"),
+            difficulty=difficulty,
+            assistant_reply=str(st.session_state.video_last_reply),
+            assistant_reply_id=int(st.session_state.video_reply_id),
+            history=st.session_state.video_messages,
+            avatar_path=LUNA_IMAGE,
+            reset_token=int(st.session_state.video_reset_token),
+            key=VIDEO_CALL_COMPONENT_KEY,
+            on_utterance=handle_realtime_video_utterance,
+            height=1100,
+        )
 
-    st.write("")
-    transcript_col, coach_col = st.columns([0.62, 0.38], gap="large", vertical_alignment="top")
+    refreshed_state: LearnerState = st.session_state.learner_state
+    st.html(
+        progress_stat_strip_html(
+            min(100, refreshed_state.total_points),
+            {
+                "Live turns": refreshed_state.conversation_turns,
+                "Current level": refreshed_state.difficulty,
+                "Learner profile": predict_learner_profile(refreshed_state),
+            },
+            label="Call practice progress",
+            helper="Toward your 100-point live speaking goal",
+        )
+    )
 
-    with transcript_col:
-        with st.container(key="video-call-transcript"):
-            st.markdown("### Live conversation transcript")
-            st.caption(
-                "For the zero-API deployment, type the sentence you said aloud. "
-                "Luna processes it immediately through the same language guard, "
-                "adaptive learning engine, and scoring pipeline."
-            )
-            with st.container(height=360, key="video-transcript-scroll", border=False, autoscroll=True):
-                for message in st.session_state.video_messages:
-                    avatar = str(LUNA_IMAGE) if message["role"] == "assistant" else None
-                    with st.chat_message(message["role"], avatar=avatar):
-                        st.markdown(str(message.get("content", "")))
-                        if message.get("feedback"):
-                            render_feedback_card(message)
+    action_one, action_two = st.columns(2, gap="small")
+    with action_one:
+        if st.button(
+            "Clear live transcript",
+            icon=":material/refresh:",
+            width="stretch",
+            key="clear-realtime-video-transcript",
+        ):
+            st.session_state.video_messages = [
+                {"role": "assistant", "content": greeting}
+            ]
+            st.session_state.video_last_reply = greeting
+            st.session_state.video_reply_id = 0
+            st.session_state.video_last_event_id = ""
+            st.session_state.video_processing_error = None
+            st.session_state.video_reset_token = int(
+                st.session_state.get("video_reset_token", 0)
+            ) + 1
+            st.rerun()
 
-            transcript = st.chat_input(
-                f"Type what you said in {target_language}...",
-                key="video-transcript-input",
-                max_chars=1200,
-            )
-            if transcript:
-                with st.spinner("Luna is responding to your call..."):
-                    submit_video_call_turn(
-                        transcript,
-                        target_language,
-                        difficulty,
-                        auto_adapt=auto_adapt,
-                        use_llm=use_llm,
-                    )
-                st.rerun()
-
-    with coach_col:
-        with st.container(key="video-call-coach"):
-            st.markdown("### Voice turn")
-            st.caption(
-                "Record a short voice note at speech-recognition quality. "
-                "You can replay it, then enter its transcript in the call box."
-            )
-            voice_note = st.audio_input(
-                "Record your sentence",
-                sample_rate=16000,
-                key="video_voice_note",
-                width="stretch",
-            )
-            if voice_note is not None:
-                st.success("Voice turn captured. Replay it above, then submit the transcript.")
-
-            st.markdown("#### Call coaching")
-            st.html(
-                pills_html(
-                    [
-                        "Camera live" if is_live else "Camera ready",
-                        target_language,
-                        "Adaptive" if auto_adapt else difficulty,
-                    ]
-                )
-            )
-            st.markdown(
-                """
-- Keep each turn to one or two natural sentences.
-- Look toward the camera while speaking.
-- Use Luna's **Hear Luna** button for spoken pronunciation.
-- Camera and microphone can be toggled from the WebRTC controls.
-"""
-            )
-
-            if st.button(
-                "Clear video-call transcript",
-                icon=":material/refresh:",
-                width="stretch",
-                key="clear-video-call",
-            ):
-                st.session_state.video_messages = [
-                    {
-                        "role": "assistant",
-                        "content": (
-                            "Hi! I am Luna. Start your camera and microphone, then "
-                            "practice with me in your target language."
-                        ),
-                    }
-                ]
-                st.session_state.video_last_reply = (
-                    "Start the camera, then say or type a sentence to begin."
-                )
-                st.rerun()
+    with action_two:
+        if st.button(
+            "Reset all learning progress",
+            icon=":material/restart_alt:",
+            width="stretch",
+            key="reset-from-realtime-video-call",
+        ):
+            reset_all_state()
+            st.rerun()
 
     st.info(
-        "Cloud note: WebRTC uses a public STUN server by default. Some corporate, "
-        "school, or restrictive networks may also require a TURN relay. Optional "
-        "TURN_URL, TURN_USERNAME, and TURN_CREDENTIAL secrets are supported.",
-        icon=":material/cloud:",
+        "Live transcript uses the browser Web Speech API. Interim words stay in "
+        "the browser; each finalized sentence is sent to the Python learning "
+        "engine, which applies the language guard, adaptive difficulty, feedback, "
+        "points, and a response in the selected target language. If live speech "
+        "recognition is unavailable, the same call panel provides a manual text fallback.",
+        icon=":material/privacy_tip:",
     )
 
 
@@ -1209,8 +1153,9 @@ def render_about() -> None:
 - Fraunces display typography and Plus Jakarta Sans body typography
 - Responsive landing page, procedural character art, cards, phone mockup, and animations
 - AI character conversation with tutor feedback and reward points
-- Live camera + microphone video-call practice with Luna through WebRTC
-- Browser text-to-speech playback for Luna in all supported languages
+- Real-time browser camera + microphone preview through Streamlit Components V2
+- Interim and final live speech transcript for every learner turn
+- Automatic AI reply and browser text-to-speech in the selected target language
 - Optional local Hugging Face model mode using `google/flan-t5-small`
 - Vocabulary, role-play, and sentence-expansion mini-games
 - Epsilon-greedy adaptive difficulty selection
@@ -1223,7 +1168,7 @@ def render_about() -> None:
         st.html(
             """
 <div class="about-architecture">
-  <div class="arch-step"><b>1. Streamlit interface</b><span>Navigation, chat, WebRTC video call, voice capture, mini-games, analytics, and responsive visual components.</span></div>
+  <div class="arch-step"><b>1. Streamlit interface</b><span>Navigation, chat, a Components V2 real-time camera/transcript call, mini-games, analytics, and responsive visual components.</span></div>
   <div class="arch-step"><b>2. Python learning core</b><span>Conversation prompts, feedback, rewards, language guard, bandit, and clustering logic.</span></div>
   <div class="arch-step"><b>3. Optional model layer</b><span>Local Hugging Face generation when the full requirements are installed; otherwise a fast fallback.</span></div>
 </div>

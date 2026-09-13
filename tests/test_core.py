@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from lingglot.core import (
     DIFFICULTY_LEVELS,
@@ -11,6 +12,7 @@ from lingglot.core import (
     check_vocab_answer,
     contains_chinese_characters,
     detect_input_language,
+    ensure_target_language_reply,
     generate_vocab_question,
     language_learning_turn,
     learner_history_dataframe,
@@ -122,6 +124,53 @@ class CoreLogicTests(unittest.TestCase):
         self.assertEqual(result["points"], 0)
         self.assertEqual(state.total_points, 0)
         self.assertIn("español", result["ai_reply"])
+
+
+    def test_reply_language_guard_replaces_clear_mismatch(self) -> None:
+        reply, replaced, detected, confidence = ensure_target_language_reply(
+            "Hello, how are you today?",
+            "Spanish",
+            "Me gusta aprender español hoy.",
+            "Beginner",
+        )
+        self.assertTrue(replaced)
+        self.assertEqual(detected, "English")
+        self.assertGreaterEqual(confidence, 0.70)
+        self.assertIn("Muy bien", reply)
+
+    def test_ambiguous_generic_reply_is_localized_for_non_english_target(self) -> None:
+        reply, replaced, detected, _confidence = ensure_target_language_reply(
+            "Okay!",
+            "Chinese",
+            "我今天学习中文。",
+            "Beginner",
+        )
+        self.assertTrue(replaced)
+        self.assertIsNone(detected)
+        self.assertIn("很好", reply)
+
+    def test_llm_reply_is_forced_back_to_selected_language(self) -> None:
+        state = LearnerState(target_language="Spanish")
+        bandit = DifficultyBandit(epsilon=0.0)
+        with patch(
+            "lingglot.core.generate_with_llm",
+            side_effect=[
+                ("Hello, how are you today?", None),
+                ("Good sentence.", None),
+            ],
+        ):
+            result, _state, _bandit = language_learning_turn(
+                state,
+                bandit,
+                "Me gusta aprender español hoy.",
+                "Spanish",
+                "Beginner",
+                auto_adapt_difficulty=False,
+                use_llm=True,
+            )
+        self.assertTrue(result["reply_language_guarded"])
+        self.assertEqual(result["reply_detected_language"], "English")
+        self.assertIn("Muy bien", result["ai_reply"])
 
     def test_reward_is_positive(self) -> None:
         points = calculate_reward(

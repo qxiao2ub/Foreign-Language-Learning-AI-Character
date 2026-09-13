@@ -22,5 +22,7 @@ jobs:
         run: python verify_repository.py
       - name: Run core tests
         run: python -m pytest -q
+      - name: Validate real-time component JavaScript
+        run: python tools/validate_realtime_component.py
       - name: Compile Python files
         run: python -m compileall -q streamlit_app.py lingglot

@@ -1,45 +1,25 @@
-# Multilingual language-guard bug fix
+# Real-time video and transcript revision
 
-## Problem
+## Problems addressed
 
-The previous implementation only handled this one mismatch:
+The previous Video call experience behaved more like a media recorder: the learner could not rely on a persistent live call view, speech was not transcribed continuously, and the learner had to enter the spoken sentence manually before Luna could respond.
 
-- Target language: English
-- Learner input: Chinese characters
+## New implementation
 
-Selecting Spanish, French, German, Italian, Portuguese, Chinese, Japanese,
-Korean, or Arabic did not reliably reject input written in another supported
-language.
+- Live camera and microphone are opened with browser `getUserMedia`.
+- The video element displays the current camera stream in real time.
+- Web Speech recognition runs continuously with interim results enabled.
+- Interim words are updated while the learner is speaking.
+- Every finalized sentence is sent to Streamlit as a Components V2 trigger.
+- The original AI/adaptive-learning pipeline processes each sentence.
+- Luna's reply is shown, saved in the live transcript, and spoken in the selected target-language locale.
+- Recognition pauses while Luna speaks and resumes afterward.
+- A manual transcript fallback remains available for unsupported browsers.
+- A reply-language guard replaces a clear wrong-language model response with the correct localized fallback.
 
-## Fix
+## Verification
 
-A new dependency-free module, `lingglot/language_detection.py`, now validates
-all ten supported target languages. It uses Unicode scripts, weighted language
-markers, accent evidence, and character n-gram profiles. Detection is
-conservative so names, loanwords, and ambiguous short words are not rejected.
-
-Mismatch responses are localized to the current target language. For example:
-
-- Spanish target + English input: `Por favor, habla y practica en español.`
-- French target + German input: `Parle et entraîne-toi en français, s’il te plaît.`
-- Chinese target + Japanese input: `请用中文说话和练习。`
-- Arabic target + Chinese input: `يرجى التحدث والتدرّب باللغة العربية.`
-
-The tutor feedback also identifies the detected language and awards zero points
-for the mismatched turn.
-
-## Validation
-
-The automated suite covers:
-
-- detection of all ten supported languages;
-- wrong-language rejection for every target language;
-- acceptance of matching-language input for every target;
-- ambiguous short words and shared Spanish/Portuguese words;
-- Japanese kanji-only safeguards;
-- zero-point behavior for rejected turns.
-
-Run locally with:
+Run:
 
 ```bash
 python verify_repository.py

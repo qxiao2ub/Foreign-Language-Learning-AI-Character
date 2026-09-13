@@ -1,41 +1,40 @@
-# Lingglot Video Call Guide
+# Lingglot Real-Time Video Call Guide
 
-## What the new page does
+## What changed
 
-The **Video call** page adds a live camera and microphone experience around Luna while reusing the existing Lingglot learning engine. It is designed for Streamlit Community Cloud and keeps the Lovable cream/coral/magenta visual system.
+The Video call page now uses a browser-native Streamlit Components V2 interface instead of a recording-style workflow. It keeps the camera preview and live speech-recognition session running in the browser while Streamlit processes finalized learner sentences.
 
-### Core flow
+## Call workflow
 
-1. Choose a target language and call level.
-2. Press **START** in the camera card and allow browser camera/microphone permissions.
-3. Speak a sentence naturally while looking toward the camera.
-4. Type the sentence you spoke into the live transcript box.
-5. Luna runs the same multilingual language guard, adaptive bandit, AI/fallback response, tutor feedback, points, and learner clustering used by the Conversation page.
-6. Press **Hear Luna** to hear the response with the browser's installed voice for the selected language.
-7. Use the WebRTC camera/mic toggle controls or **STOP** to end the media stream.
+1. Select a target language and level.
+2. Press **Start call**.
+3. Grant camera and microphone permission.
+4. The learner sees a live mirrored camera preview immediately.
+5. Interim recognition text appears word by word in **Listening now**.
+6. When the browser marks an utterance final, the sentence is added to the live transcript and sent to Python.
+7. The Python engine validates the learner language, selects/adapts difficulty, generates feedback, awards points, and produces Luna's answer.
+8. Luna's answer appears in the transcript and is spoken using the browser voice for the selected target locale.
+9. Recognition pauses while Luna speaks and resumes afterward to prevent the AI voice from being transcribed as learner speech.
 
-## Why transcript entry remains explicit
+## Browser behavior
 
-The default public deployment has no required API key and no heavyweight speech recognition model. `st.audio_input` captures a 16 kHz speech-quality voice note for replay, but the typed transcript is what is scored. This keeps deployment stable and prevents silent calls to third-party transcription services.
+The component uses:
 
-## Streamlit Cloud networking
+- `navigator.mediaDevices.getUserMedia()` for live camera and microphone access;
+- `SpeechRecognition` or `webkitSpeechRecognition` for interim/final transcript events;
+- `speechSynthesis` for Luna's spoken answer.
 
-`streamlit-webrtc` needs HTTPS plus STUN/TURN connectivity for remote WebRTC. The repository ships a public Google STUN server configuration. Some restrictive NAT/firewall environments need TURN. Optional Streamlit secrets are supported:
+Camera and microphone access require a secure context and explicit user permission. Streamlit Community Cloud is served over HTTPS. Chrome or Edge is recommended because Web Speech recognition support is not uniform across browsers.
 
-```toml
-TURN_URL = "turn:your-turn-host:3478"
-TURN_USERNAME = "username"
-TURN_CREDENTIAL = "credential"
-```
+When live recognition is unsupported or temporarily fails, the live video remains available and the learner can type or correct a sentence in the manual transcript panel.
 
-Do not commit `.streamlit/secrets.toml` to GitHub.
+## Privacy behavior
 
-## Dependency
+- Lingglot does not intentionally record or save the live camera stream.
+- Only finalized transcript text is sent to the Python learning engine.
+- Interim words remain inside the browser component.
+- A browser may implement speech recognition with an online service; users should follow the browser/vendor privacy policy.
 
-The deployment pins:
+## Network behavior
 
-```text
-streamlit-webrtc==0.77.0
-```
-
-This release supports Streamlit 1.51+ and uses media dependencies with Python 3.14 wheels.
+This is an AI-character practice call with a local self-view, not a peer-to-peer human meeting. It therefore does not require STUN or TURN configuration in the default build.

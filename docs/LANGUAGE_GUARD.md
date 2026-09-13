@@ -44,3 +44,7 @@ Examples:
 
 Ambiguous words such as `pizza`, shared words such as `agua`, and ordinary
 Japanese kanji-only text are not automatically rejected.
+
+## Luna reply-language enforcement
+
+The same conservative detector now checks Luna's generated answer. If an optional local model clearly answers in another language—or returns an ambiguous generic Latin reply during a non-English lesson—the app replaces it with Luna's known localized fallback. This guarantees that the learner hears a response in the selected practice language even when the optional model ignores its prompt.
