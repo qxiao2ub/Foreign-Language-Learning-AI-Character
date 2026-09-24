@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -33,9 +34,11 @@ def elevenlabs_configured() -> bool:
     return bool(_secret_or_env("ELEVENLABS_API_KEY"))
 
 
-def get_voice_id() -> str:
-    """Return the configured ElevenLabs voice ID."""
-    return _secret_or_env("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
+def get_voice_id(character: str = "Luna") -> str:
+    """Return a character-specific ElevenLabs voice ID when configured."""
+    safe_name = re.sub(r"[^A-Za-z0-9]+", "_", str(character or "Luna")).upper().strip("_")
+    configured = _secret_or_env(f"ELEVENLABS_{safe_name}_VOICE_ID")
+    return configured or _secret_or_env("ELEVENLABS_VOICE_ID", DEFAULT_VOICE_ID)
 
 
 def get_model_id() -> str:
@@ -43,7 +46,14 @@ def get_model_id() -> str:
     return _secret_or_env("ELEVENLABS_MODEL_ID", DEFAULT_MODEL_ID)
 
 
-def synthesize_elevenlabs(text: str, *, language_code: str | None = None, timeout: float = 30.0) -> bytes:
+def synthesize_elevenlabs(
+    text: str,
+    *,
+    language_code: str | None = None,
+    character: str = "Luna",
+    voice_id: str | None = None,
+    timeout: float = 30.0,
+) -> bytes:
     """Generate MP3 bytes using ElevenLabs Text-to-Speech."""
     text = str(text or "").strip()
     api_key = _secret_or_env("ELEVENLABS_API_KEY")
@@ -52,7 +62,7 @@ def synthesize_elevenlabs(text: str, *, language_code: str | None = None, timeou
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY is not configured.")
 
-    voice_id = get_voice_id()
+    voice_id = str(voice_id or get_voice_id(character)).strip()
     model_id = get_model_id()
     output_format = _secret_or_env("ELEVENLABS_OUTPUT_FORMAT", DEFAULT_OUTPUT_FORMAT)
 

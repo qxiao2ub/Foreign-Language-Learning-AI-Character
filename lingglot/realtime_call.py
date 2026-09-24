@@ -21,7 +21,7 @@ REALTIME_CALL_HTML = r"""
     <div class="rtc-brand-block">
       <span class="rtc-live-pill" id="call-status-pill"><i></i><span id="call-status-text">READY</span></span>
       <div>
-        <strong>Live call with Luna</strong>
+        <strong id="character-call-name">Live call</strong>
         <span id="lesson-label">Language practice</span>
         <span class="voice-provider" id="voice-provider">Browser voice</span>
       </div>
@@ -32,7 +32,7 @@ REALTIME_CALL_HTML = r"""
   <main class="rtc-stage-grid">
     <section class="rtc-tile ai-tile" id="ai-tile" aria-label="Luna AI partner video tile">
       <div class="tile-topline">
-        <span class="participant-name">Luna · AI tutor</span>
+        <span class="participant-name" id="ai-participant-name">AI tutor</span>
         <span class="tile-state" id="ai-state">Ready</span>
       </div>
       <div class="ai-orbit orbit-a"></div>
@@ -110,23 +110,16 @@ REALTIME_CALL_HTML = r"""
       <div class="transcript-history" id="transcript-history" aria-live="polite"></div>
     </div>
 
-    <aside class="manual-card">
-      <span class="section-kicker">VOICE TURN</span>
-      <h3>Review or type a sentence</h3>
-      <p class="manual-help">Final speech is sent automatically. You can also correct the text below and submit it manually.</p>
-      <textarea id="manual-transcript" rows="4" maxlength="1200" placeholder="Your sentence in the selected learning language…"></textarea>
-      <div class="manual-actions">
-        <label class="autosend-label"><input id="auto-send" type="checkbox" checked /> Auto-send final speech</label>
-        <button id="send-manual" class="send-manual" type="button">Send to Luna</button>
+    <aside class="manual-card call-info-card">
+      <span class="section-kicker">AUTOMATIC PROCESSING</span>
+      <h3>Speak naturally</h3>
+      <p class="manual-help">Every finalized sentence is sent to Luna automatically. No review or typing step is required.</p>
+      <div class="auto-processing-list">
+        <div><b>1</b><span>Speak in your selected learning language.</span></div>
+        <div><b>2</b><span>Live transcript appears while you talk.</span></div>
+        <div><b>3</b><span>Luna replies in that same target language.</span></div>
       </div>
-      <div class="compatibility-note" id="compatibility-note">
-        Chrome or Edge is recommended for continuous live transcription.
-      </div>
-      <ul class="call-tips">
-        <li>Speak one or two natural sentences per turn.</li>
-        <li>Wait while Luna replies aloud in the selected language.</li>
-        <li>Use headphones to reduce echo and improve recognition.</li>
-      </ul>
+      <div class="compatibility-note" id="compatibility-note">Chrome or Edge is recommended for continuous live transcription.</div>
     </aside>
   </section>
 </div>
@@ -372,7 +365,6 @@ button, textarea, input { font: inherit; }
 .rtc-controls { justify-content: center; flex-wrap: wrap; gap: 10px; padding: 14px 4px 8px; }
 .call-control,
 .soft-action,
-.send-manual {
   border: 1px solid #ead3c8;
   border-radius: 999px;
   background: rgba(255,255,255,.9);
@@ -381,7 +373,7 @@ button, textarea, input { font: inherit; }
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
 .call-control { min-width: 120px; padding: 10px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
-.call-control:hover:not(:disabled), .soft-action:hover, .send-manual:hover { transform: translateY(-1px); border-color: #ff9074; box-shadow: 0 10px 22px -16px rgba(91,34,27,.7); }
+.call-control:hover:not(:disabled), .soft-action:hover { transform: translateY(-1px); border-color: #ff9074; box-shadow: 0 10px 22px -16px rgba(91,34,27,.7); }
 .call-control:disabled { cursor: not-allowed; opacity: .46; }
 .primary-control { color: white; border-color: transparent; background: linear-gradient(125deg, #ff704c, #ff4d94 58%, #ee55c8); }
 .primary-control.is-ending { background: linear-gradient(125deg, #e13f56, #bd234f); }
@@ -440,12 +432,9 @@ button, textarea, input { font: inherit; }
 .bubble-points { display: inline-block; margin-top: 6px; padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,.6); font-size: .64rem; font-weight: 800; }
 
 .manual-help { margin: 7px 0 11px; color: #80645d; font-size: .76rem; line-height: 1.5; }
-#manual-transcript { width: 100%; resize: vertical; min-height: 96px; padding: 10px 11px; border: 1px solid #e9cfc3; border-radius: 14px; background: rgba(255,253,250,.9); color: #432a26; outline: none; }
-#manual-transcript:focus { border-color: #ff876d; box-shadow: 0 0 0 3px rgba(255,135,109,.13); }
 .manual-actions { justify-content: space-between; gap: 8px; margin-top: 9px; }
 .autosend-label { display: inline-flex; align-items: center; gap: 6px; color: #75564f; font-size: .7rem; cursor: pointer; }
 .autosend-label input { accent-color: #ff5d70; }
-.send-manual { padding: 8px 11px; font-size: .72rem; font-weight: 800; color: white; border-color: transparent; background: linear-gradient(125deg, #ff704d, #ff4f97); }
 .compatibility-note { margin-top: 11px; padding: 9px 10px; border-radius: 12px; background: #fff3e9; color: #8d6257; font-size: .69rem; line-height: 1.45; }
 .compatibility-note.error { background: #ffedf0; color: #9d3148; }
 .call-tips { margin: 11px 0 0; padding-left: 18px; color: #7f635c; font-size: .7rem; line-height: 1.55; }
@@ -457,6 +446,13 @@ button, textarea, input { font: inherit; }
 @keyframes orbit-spin { to { transform: rotate(360deg); } }
 @keyframes wave { from { height: 4px; } to { height: 19px; } }
 @keyframes mic-level { from { height: 3px; } to { height: 14px; } }
+
+
+.call-info-card { min-height: 100%; }
+.auto-processing-list { display:grid; gap:10px; margin-top:14px; }
+.auto-processing-list div { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid #efdacf; border-radius:14px; background:rgba(255,255,255,.68); }
+.auto-processing-list b { width:24px; height:24px; display:grid; place-items:center; border-radius:50%; background:#ffe6dc; color:#a14d39; font-size:.75rem; }
+.auto-processing-list span { flex:1; color:#73574f; font-size:.78rem; line-height:1.45; }
 
 @media (max-width: 840px) {
   .rtc-stage-grid,
@@ -475,8 +471,6 @@ button, textarea, input { font: inherit; }
   .ai-avatar-wrap { width: 170px; height: 170px; }
   #luna-avatar { width: 148px; height: 148px; }
   .call-control { min-width: 0; flex: 1 1 42%; }
-  .manual-actions { align-items: flex-start; flex-direction: column; }
-  .send-manual { width: 100%; }
 }
 """
 
@@ -595,7 +589,7 @@ export default function(component) {
 
       const label = document.createElement("span");
       label.className = "bubble-label";
-      label.textContent = role === "user" ? "You" : "Luna";
+      label.textContent = role === "user" ? "You" : (runtime.targetCharacter || "AI tutor");
       bubble.appendChild(label);
 
       const content = document.createElement("span");
@@ -736,10 +730,10 @@ export default function(component) {
     const note = q("#compatibility-note");
 
     if (!Recognition) {
-      badge.textContent = "Manual transcript mode";
+      badge.textContent = "Live transcript unavailable";
       badge.className = "recognition-badge unsupported";
       note.classList.add("error");
-      note.textContent = "This browser does not expose continuous SpeechRecognition. Live video still works; type the sentence and press Send to Luna. Chrome or Edge is recommended.";
+      note.textContent = "This browser does not expose continuous SpeechRecognition. Live video remains available; Chrome or Edge is recommended for automatic transcript processing.";
       updateControls();
       return null;
     }
@@ -779,14 +773,10 @@ export default function(component) {
 
       const interimText = interim.trim();
       q("#interim-text").textContent = interimText || "Listening…";
-      if (interimText) q("#manual-transcript").value = interimText;
-
       const finalText = finalized.trim();
       if (finalText) {
         q("#interim-text").textContent = finalText;
-        q("#manual-transcript").value = finalText;
-        if (q("#auto-send").checked) submitUtterance(finalText, "speech");
-        else setStatus("Final speech captured. Review it and press Send to Luna.", "live");
+        submitUtterance(finalText, "speech");
       }
     };
 
@@ -799,7 +789,7 @@ export default function(component) {
         }
         return;
       }
-      setStatus(`Speech recognition error: ${error}. You can type the sentence manually.`, "error");
+      setStatus(`Speech recognition error: ${error}. Please continue speaking after the recognition restarts.`, "error");
       q("#recognition-badge").textContent = "Transcript needs attention";
       q("#recognition-badge").className = "recognition-badge unsupported";
     };
@@ -832,7 +822,7 @@ export default function(component) {
       // Chrome throws when start is called while transitioning. Retry once.
       setTimeout(() => {
         if (runtime.callActive && !runtime.recognitionActive && !runtime.awaitingReply && !runtime.speaking) {
-          try { runtime.recognition.start(); } catch (_) { /* manual mode remains available */ }
+          try { runtime.recognition.start(); } catch (_) { /* recognition can be retried */ }
         }
       }, 500);
     }
@@ -844,7 +834,6 @@ export default function(component) {
 
     runtime.awaitingReply = true;
     runtime.lastSubmittedText = transcript;
-    q("#manual-transcript").value = "";
     q("#interim-text").textContent = "Sentence sent. Luna is thinking…";
     q("#ai-tile").classList.remove("is-speaking");
     q("#ai-tile").classList.add("is-thinking");
@@ -983,13 +972,6 @@ export default function(component) {
     q("#toggle-mic").onclick = toggleMic;
     q("#toggle-camera").onclick = toggleCamera;
     q("#toggle-transcript").onclick = toggleTranscript;
-    q("#send-manual").onclick = () => submitUtterance(q("#manual-transcript").value, "manual");
-    q("#manual-transcript").onkeydown = (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-        event.preventDefault();
-        submitUtterance(q("#manual-transcript").value, "manual");
-      }
-    };
     q("#replay-ai").onclick = () => speakAssistant(runtime.data?.assistant_reply || "", true, runtime.data?.assistant_audio_data_uri || "");
   }
 
@@ -1042,6 +1024,7 @@ export default function(component) {
       cleaned: false,
       locale: safeData.locale || "en-US",
       targetLanguage: safeData.target_language || "English",
+      targetCharacter: safeData.character_name || "Luna",
       difficulty: safeData.difficulty || "Beginner",
       lastReplyId: Number(safeData.assistant_reply_id || 0),
       lastResetToken: Number(safeData.reset_token || 0),
@@ -1065,9 +1048,12 @@ export default function(component) {
   const previousLocale = runtime.locale;
   runtime.locale = safeData.locale || "en-US";
   runtime.targetLanguage = safeData.target_language || "English";
+  runtime.targetCharacter = safeData.character_name || "Luna";
   runtime.difficulty = safeData.difficulty || "Beginner";
 
   q("#lesson-label").textContent = `${runtime.targetLanguage} · ${runtime.difficulty}`;
+  q("#character-call-name").textContent = `${runtime.targetCharacter || "AI partner"} video call`;
+  q("#ai-participant-name").textContent = `${runtime.targetCharacter || "AI partner"} · AI tutor`;
   q("#voice-provider").textContent = String(safeData.voice_provider || "Browser voice");
   q("#latest-ai-reply").textContent = String(safeData.assistant_reply || "Start the call and say a sentence.");
   if (safeData.avatar_data_uri) q("#luna-avatar").src = safeData.avatar_data_uri;
@@ -1078,7 +1064,6 @@ export default function(component) {
   if (resetToken !== runtime.lastResetToken) {
     runtime.lastResetToken = resetToken;
     runtime.awaitingReply = false;
-    q("#manual-transcript").value = "";
     q("#interim-text").textContent = "Transcript cleared. Continue speaking when ready.";
   }
 
@@ -1145,6 +1130,7 @@ def mount_realtime_call(
     target_language: str,
     locale: str,
     difficulty: str,
+    character_name: str = "Luna",
     assistant_reply: str,
     assistant_reply_id: int,
     assistant_audio_data_uri: str = "",
@@ -1163,6 +1149,7 @@ def mount_realtime_call(
             "target_language": target_language,
             "locale": locale,
             "difficulty": difficulty,
+            "character_name": character_name,
             "assistant_reply": assistant_reply,
             "assistant_reply_id": int(assistant_reply_id),
             "assistant_audio_data_uri": assistant_audio_data_uri,

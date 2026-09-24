@@ -17,6 +17,8 @@ REQUIRED_PATHS = (
     ROOT / "lingglot" / "core.py",
     ROOT / "lingglot" / "language_detection.py",
     ROOT / "lingglot" / "realtime_call.py",
+    ROOT / "lingglot" / "dictation.py",
+    ROOT / "lingglot" / "elevenlabs_voice.py",
     ROOT / "lingglot" / "visuals.py",
 )
 
@@ -33,6 +35,8 @@ for module_name in (
     "lingglot.core",
     "lingglot.language_detection",
     "lingglot.realtime_call",
+    "lingglot.dictation",
+    "lingglot.elevenlabs_voice",
     "lingglot.visuals",
 ):
     module = importlib.import_module(module_name)
@@ -57,5 +61,10 @@ if missing_features:
         print(f"  - {feature}")
     raise SystemExit(1)
 
+from lingglot.dictation import HTML as DICTATION_HTML, JS as DICTATION_JS  # noqa: E402
+if "Dictate" not in DICTATION_HTML or "SpeechRecognition" not in DICTATION_JS or "setTriggerValue" not in DICTATION_JS:
+    print("Repository check FAILED. Dictation component is incomplete.")
+    raise SystemExit(1)
+print("Conversation dictation component checks PASSED.")
 print("Real-time video/transcript component checks PASSED.")
 print("Repository check PASSED.")

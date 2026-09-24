@@ -26,7 +26,7 @@ The component uses:
 
 Camera and microphone access require a secure context and explicit user permission. Streamlit Community Cloud is served over HTTPS. Chrome or Edge is recommended because Web Speech recognition support is not uniform across browsers.
 
-When live recognition is unsupported or temporarily fails, the live video remains available and the learner can type or correct a sentence in the manual transcript panel.
+When live recognition is unsupported or temporarily fails, the live video remains available and the learner can type or correct a sentence in the automatic transcript panel.
 
 ## Privacy behavior
 
@@ -38,3 +38,11 @@ When live recognition is unsupported or temporarily fails, the live video remain
 ## Network behavior
 
 This is an AI-character practice call with a local self-view, not a peer-to-peer human meeting. It therefore does not require STUN or TURN configuration in the default build.
+
+
+### Current learner flow
+- Choose character, target language, and difficulty level.
+- Start the call and allow camera/microphone access.
+- Finalized speech is submitted automatically; there is no manual review step.
+- The selected character's ElevenLabs voice is used when configured through Streamlit Secrets.
+- A computer-generated transcript is shown below the call stage.

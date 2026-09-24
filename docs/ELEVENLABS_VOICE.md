@@ -1,6 +1,6 @@
 # ElevenLabs natural voice for Luna
 
-The Video call page supports optional ElevenLabs Text-to-Speech for more natural AI replies. The app remains deployable without ElevenLabs; it falls back to browser speech synthesis.
+The Video call page supports optional ElevenLabs Text-to-Speech for more natural AI replies. Character-specific voice IDs can be configured so each AI partner can have a distinct sound. The app remains deployable without ElevenLabs; it falls back to browser speech synthesis.
 
 ## Streamlit Cloud setup
 
@@ -9,7 +9,8 @@ In **App settings -> Secrets**, add:
 ```toml
 ELEVENLABS_API_KEY = "your-elevenlabs-api-key"
 ELEVENLABS_VOICE_ID = "your-voice-id"
-ELEVENLABS_MODEL_ID = "eleven_v3"
+ELEVENLABS_MODEL_ID = "eleven_flash_v2_5"
+# Optional: ELEVENLABS_LUNA_VOICE_ID, ELEVENLABS_MILO_VOICE_ID, etc.
 ```
 
 `ELEVENLABS_VOICE_ID` is optional and defaults to the voice ID shown in ElevenLabs' current quickstart example. For a dedicated Luna character voice, create/select a voice in the ElevenLabs Voice Library and set its ID as the secret.

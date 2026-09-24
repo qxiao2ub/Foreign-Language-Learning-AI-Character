@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from html import escape
 from pathlib import Path
+import re
 import sys
 from typing import Any, Dict
 
@@ -76,6 +77,7 @@ from lingglot.core import (
     sentence_expansion_challenge,
 )
 from lingglot.realtime_call import mount_realtime_call
+from lingglot.dictation import mount_dictation
 from lingglot.elevenlabs_voice import (
     audio_data_uri,
     elevenlabs_configured,
@@ -83,12 +85,12 @@ from lingglot.elevenlabs_voice import (
     synthesize_elevenlabs,
 )
 from lingglot.visuals import (
+    CHARACTERS,
     character_grid_html,
     character_svg,
     cta_banner_html,
     feature_grid_html,
     hero_phone_html,
-    pills_html,
     progress_tip_html,
     progress_stat_strip_html,
 )
@@ -132,6 +134,19 @@ LANGUAGE_VOICE_LOCALES = {
 }
 
 
+CHARACTER_OPTIONS = [name for name, _trait in CHARACTERS]
+CHARACTER_INDEX = {name: i for i, name in enumerate(CHARACTER_OPTIONS)}
+CHARACTER_VOICE_LABELS = {
+    "Luna": "Warm tutor",
+    "Milo": "Calm guide",
+    "Pico": "Bright coach",
+    "Nori": "Energetic coach",
+    "Sol": "Thoughtful mentor",
+    "Bibi": "Friendly companion",
+}
+
+
+
 VIDEO_CALL_COMPONENT_KEY = "lingglot_realtime_call"
 
 VIDEO_CALL_GREETINGS = {
@@ -153,6 +168,7 @@ def submit_video_call_turn(
     target_language: str,
     difficulty: str,
     *,
+    character_name: str = "Luna",
     auto_adapt: bool,
     use_llm: bool,
     source: str = "speech",
@@ -193,6 +209,7 @@ def submit_video_call_turn(
             audio_bytes = synthesize_elevenlabs(
                 st.session_state.video_last_reply,
                 language_code=LANGUAGE_VOICE_LOCALES.get(target_language, "en-US"),
+                character=character_name,
             )
             st.session_state.video_voice_audio = audio_data_uri(audio_bytes)
         except Exception as exc:
@@ -265,10 +282,9 @@ def handle_realtime_video_utterance() -> None:
             transcript,
             target_language,
             difficulty,
-            auto_adapt=bool(
-                st.session_state.get("video_auto_adapt_widget", True)
-            ),
-            use_llm=bool(st.session_state.get("video_use_llm_widget", False)),
+            character_name=str(st.session_state.get("character_name", "Luna")),
+            auto_adapt=False,
+            use_llm=False,
             source=str(event.get("source", "speech")),
             event_id=event_id,
         )
@@ -292,6 +308,8 @@ def initialize_session_state() -> None:
     defaults: Dict[str, Any] = {
         "learner_state": LearnerState(),
         "bandit": DifficultyBandit(),
+        "character_name": "Luna",
+        "dictation_last_id": "",
         "messages": default_messages(),
         "current_vocab_answer": None,
         "current_vocab_question": (
@@ -340,9 +358,12 @@ def reset_all_state() -> None:
         "pending_challenge",
         "learner_name_widget",
         "target_language_widget",
+        "character_widget",
+        "video_character_widget",
         "manual_difficulty_widget",
-        "auto_adapt_widget",
-        "use_llm_widget",
+        "composer_text",
+        "dictation_component",
+        "dictation_last_id",
         "games_language_widget",
         "games_difficulty_widget",
         "vocab_answer_input",
@@ -356,11 +377,17 @@ def reset_all_state() -> None:
         "video_processing_error",
         "video_voice_audio",
         "video_voice_error",
+        "character_name",
         VIDEO_CALL_COMPONENT_KEY,
         "video_target_language_widget",
         "video_difficulty_widget",
-        "video_auto_adapt_widget",
-        "video_use_llm_widget",
+        "match_selection_left",
+        "match_selection_right",
+        "match_hits",
+        "match_language",
+        "matched_pairs",
+        "listen_awarded",
+        "picture_awarded",
     ]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
@@ -481,9 +508,6 @@ def render_home() -> None:
 def render_feedback_card(message: Dict[str, Any]) -> None:
     feedback = escape(str(message.get("feedback", ""))).replace("\n", "<br>")
     points = escape(str(message.get("points", 0)))
-    difficulty = escape(str(message.get("difficulty", "")))
-    profile = escape(str(message.get("profile", "")))
-    total_points = escape(str(message.get("total_points", "")))
     st.html(
         f"""
 <div class="tutor-feedback-card">
@@ -491,187 +515,128 @@ def render_feedback_card(message: Dict[str, Any]) -> None:
   <p>{feedback}</p>
   <div class="feedback-meta">
     <span>+{points} points</span>
-    <span>{total_points} total</span>
-    <span>{difficulty}</span>
-    <span>{profile}</span>
   </div>
 </div>
 """
     )
 
 
-def render_practice() -> None:
-    render_page_intro(
-        "AI conversation",
-        "Practice with Luna",
-        (
-            "Choose a language and difficulty, then write naturally. Luna will "
-            "reply, offer brief tutor feedback, award points, and update the "
-            "adaptive learner profile."
-        ),
-    )
+def _apply_character(character_name: str) -> None:
+    if character_name not in CHARACTER_INDEX:
+        character_name = "Luna"
+    st.session_state.character_name = character_name
 
+
+def _dictation_trigger_value() -> Any:
+    state = st.session_state.get("dictation_component")
+    if isinstance(state, dict):
+        return state.get("dictation")
+    return getattr(state, "dictation", None) if state is not None else None
+
+
+def render_practice() -> None:
     state: LearnerState = st.session_state.learner_state
-    settings_col, chat_col = st.columns(
-        [0.34, 0.66],
-        gap="large",
-        vertical_alignment="top",
-    )
+    settings_col, chat_col = st.columns([0.28, 0.72], gap="large", vertical_alignment="top")
 
     with settings_col:
         with st.container(key="practice-settings"):
-            st.image(str(LUNA_IMAGE), width="stretch")
-            st.markdown("### Luna")
-            st.caption("Calm, patient, and always ready for one more sentence.")
-
-            learner_name = st.text_input(
-                "Learner name",
-                value=state.username,
-                key="learner_name_widget",
+            current_character = st.session_state.get("character_name", "Luna")
+            character_name = st.selectbox(
+                "Character",
+                CHARACTER_OPTIONS,
+                index=CHARACTER_OPTIONS.index(current_character) if current_character in CHARACTER_OPTIONS else 0,
+                key="character_widget",
             )
+            _apply_character(character_name)
+            avatar_index = CHARACTER_INDEX.get(character_name, 0)
+            st.html(
+                f"""<div class='conversation-character-row'>{character_svg(avatar_index, size=54, id_prefix='conversation-sidebar')}<div><strong>{escape(character_name)}</strong><small>{escape(CHARACTER_VOICE_LABELS.get(character_name, 'Language partner'))}</small></div></div>"""
+            )
+            learner_name = st.text_input("Learner name", value=state.username, key="learner_name_widget")
             target_language = st.selectbox(
                 "Target language",
                 SUPPORTED_LANGUAGES,
-                index=(
-                    SUPPORTED_LANGUAGES.index(state.target_language)
-                    if state.target_language in SUPPORTED_LANGUAGES
-                    else 1
-                ),
+                index=SUPPORTED_LANGUAGES.index(state.target_language) if state.target_language in SUPPORTED_LANGUAGES else 0,
                 key="target_language_widget",
             )
-            manual_difficulty = st.segmented_control(
-                "Manual difficulty",
+            difficulty = st.selectbox(
+                "Difficulty level",
                 DIFFICULTY_LEVELS,
-                default=(
-                    state.difficulty
-                    if state.difficulty in DIFFICULTY_LEVELS
-                    else "Beginner"
-                ),
+                index=DIFFICULTY_LEVELS.index(state.difficulty) if state.difficulty in DIFFICULTY_LEVELS else 0,
                 key="manual_difficulty_widget",
-                width="stretch",
             )
-            auto_adapt = st.toggle(
-                "Use adaptive difficulty",
-                value=True,
-                key="auto_adapt_widget",
-                help=(
-                    "The epsilon-greedy bandit chooses a level and learns from "
-                    "the rewards earned in this session."
-                ),
-            )
-            use_llm = st.toggle(
-                "Use local Hugging Face model",
-                value=False,
-                key="use_llm_widget",
-                help=(
-                    "Requires requirements-full.txt and downloads "
-                    f"{MODEL_NAME}. The fallback engine works without it."
-                ),
-            )
-
             state.username = learner_name
             state.target_language = target_language
-
-            st.html(
-                pills_html(
-                    [
-                        target_language,
-                        "Adaptive" if auto_adapt else str(manual_difficulty),
-                        "Local LLM" if use_llm else "Fast fallback",
-                    ]
-                )
-            )
-
-            clear_col, reset_col = st.columns(2, gap="small")
-            with clear_col:
-                st.button(
-                    "New chat",
-                    icon=":material/refresh:",
-                    width="stretch",
-                    key="clear-conversation-button",
-                    on_click=clear_conversation,
-                )
-            with reset_col:
-                st.button(
-                    "Reset all",
-                    icon=":material/restart_alt:",
-                    width="stretch",
-                    key="reset-all-button",
-                    on_click=reset_all_state,
-                )
-
-            st.caption(
-                "Default mode is lightweight and does not require an external "
-                "API key. Optional model mode can require substantial memory."
-            )
+            state.difficulty = difficulty
+            st.caption("Your selected character keeps the same supportive personality across Conversation and Video call.")
 
     with chat_col:
-        with st.container(key="practice-chat"):
-            profile = predict_learner_profile(state)
-            practice_progress = min(100, max(0, state.total_points))
+        top_controls = st.columns([0.62, 0.19, 0.19], gap="small")
+        with top_controls[0]:
+            progress = min(100, max(0, state.total_points))
             st.html(
                 progress_stat_strip_html(
-                    practice_progress,
-                    {
-                        "Conversation turns": state.conversation_turns,
-                        "Current level": state.difficulty,
-                        "Learner profile": profile,
-                    },
+                    progress,
+                    {},
                     label="Practice progress",
                     helper="Toward your 100-point practice goal",
                 )
             )
+        with top_controls[1]:
+            st.button("New chat", icon=":material/refresh:", width="stretch", key="clear-conversation-button", on_click=clear_conversation)
+        with top_controls[2]:
+            st.button("Reset all", icon=":material/restart_alt:", width="stretch", key="reset-all-button", on_click=reset_all_state)
 
-            pending = st.session_state.get("pending_challenge")
-            if pending:
-                st.info(
-                    f"Mini-game prompt brought into practice: {pending}",
-                    icon=":material/lightbulb:",
-                )
-                if st.button(
-                    "Dismiss prompt",
-                    key="dismiss-pending-challenge",
-                    icon=":material/close:",
-                ):
-                    st.session_state.pending_challenge = None
-                    st.rerun()
+        pending = st.session_state.get("pending_challenge")
+        if pending:
+            st.info(f"Practice prompt: {pending}", icon=":material/lightbulb:")
+            if st.button("Dismiss", key="dismiss-pending-challenge", icon=":material/close:"):
+                st.session_state.pending_challenge = None
+                st.rerun()
 
-            with st.container(
-                height=520,
-                key="chat-scroll",
-                border=False,
-                autoscroll=True,
-            ):
+        with st.container(key="practice-chat"):
+            with st.container(height=560, key="chat-scroll", border=False, autoscroll=True):
+                conversation_avatar = ASSET_DIR / "characters" / f"{character_name.lower()}.svg"
                 for message in st.session_state.messages:
-                    avatar = str(LUNA_IMAGE) if message["role"] == "assistant" else None
+                    avatar = str(conversation_avatar) if message["role"] == "assistant" else None
                     with st.chat_message(message["role"], avatar=avatar):
                         st.markdown(str(message.get("content", "")))
                         if message.get("feedback"):
                             render_feedback_card(message)
-                        if message.get("llm_error"):
-                            st.caption(
-                                "The local model could not load, so Luna used "
-                                "the built-in fallback response."
-                            )
 
-            prompt = st.chat_input(
-                f"Write something in {target_language}...",
-                key="practice-chat-input",
-                max_chars=1200,
+            # Compact custom composer: microphone button sits beside the long input line.
+            dictation_result = mount_dictation(
+                locale=LANGUAGE_VOICE_LOCALES.get(target_language, "en-US"),
+                key="lingglot_dictation_conversation",
             )
-            if prompt:
-                st.session_state.messages.append(
-                    {"role": "user", "content": prompt}
+            st.session_state.dictation_component = dictation_result
+            event = _dictation_trigger_value()
+            if isinstance(event, dict) and event.get("id") != st.session_state.get("dictation_last_id"):
+                st.session_state.dictation_last_id = str(event.get("id"))
+                st.session_state.composer_text = str(event.get("text", "")).strip()
+
+            composer_cols = st.columns([0.9, 0.1], gap="small", vertical_alignment="bottom")
+            with composer_cols[0]:
+                prompt = st.text_input(
+                    "Message",
+                    key="composer_text",
+                    label_visibility="collapsed",
+                    placeholder=f"Write or dictate something in {target_language}…",
                 )
-                with st.spinner("Luna is thinking..."):
+            with composer_cols[1]:
+                send = st.button("Send", type="primary", width="stretch", key="composer_send", icon=":material/send:")
+
+            if send and prompt.strip():
+                st.session_state.messages.append({"role": "user", "content": prompt.strip()})
+                with st.spinner(f"{character_name} is thinking…"):
                     result, updated_state, updated_bandit = language_learning_turn(
                         st.session_state.learner_state,
                         st.session_state.bandit,
-                        prompt,
+                        prompt.strip(),
                         target_language,
-                        str(manual_difficulty or "Beginner"),
-                        auto_adapt_difficulty=auto_adapt,
-                        use_llm=use_llm,
+                        difficulty,
+                        auto_adapt_difficulty=False,
+                        use_llm=False,
                     )
                 st.session_state.learner_state = updated_state
                 st.session_state.bandit = updated_bandit
@@ -682,12 +647,9 @@ def render_practice() -> None:
                         "feedback": result["feedback"],
                         "points": result["points"],
                         "total_points": result["total_points"],
-                        "difficulty": result["difficulty"],
-                        "profile": result["profile"],
-                        "bandit": result["bandit"],
-                        "llm_error": result.get("llm_error"),
                     }
                 )
+                st.session_state.composer_text = ""
                 st.rerun()
 
 
@@ -695,175 +657,99 @@ def render_video_call() -> None:
     render_page_intro(
         "Real-time AI practice",
         "Live video call with Luna",
-        (
-            "See your camera live, speak naturally, watch an interim transcript "
-            "appear word by word, and receive Luna's spoken response in the "
-            "selected learning language after every finalized sentence."
-        ),
+        "See your camera live, speak naturally, watch the transcript build in real time, and receive a spoken reply in your selected learning language.",
     )
-
     state: LearnerState = st.session_state.learner_state
 
-    settings_one, settings_two, settings_three, settings_four = st.columns(
-        [1.1, 0.95, 0.9, 0.9], gap="small"
-    )
-    with settings_one:
+    top_one, top_two, top_three = st.columns([1.0, 1.0, 1.0], gap="small")
+    with top_one:
+        character_name = st.selectbox("Character", CHARACTER_OPTIONS, index=CHARACTER_OPTIONS.index(st.session_state.get("character_name", "Luna")), key="video_character_widget")
+        _apply_character(character_name)
+    with top_two:
         target_language = st.selectbox(
             "Target language",
             SUPPORTED_LANGUAGES,
-            index=(
-                SUPPORTED_LANGUAGES.index(state.target_language)
-                if state.target_language in SUPPORTED_LANGUAGES
-                else 0
-            ),
+            index=SUPPORTED_LANGUAGES.index(state.target_language) if state.target_language in SUPPORTED_LANGUAGES else 0,
             key="video_target_language_widget",
         )
-    with settings_two:
+    with top_three:
         difficulty = st.selectbox(
-            "Call level",
+            "Difficulty level",
             DIFFICULTY_LEVELS,
-            index=(
-                DIFFICULTY_LEVELS.index(state.difficulty)
-                if state.difficulty in DIFFICULTY_LEVELS
-                else 0
-            ),
+            index=DIFFICULTY_LEVELS.index(state.difficulty) if state.difficulty in DIFFICULTY_LEVELS else 0,
             key="video_difficulty_widget",
-        )
-    with settings_three:
-        auto_adapt = st.toggle(
-            "Adaptive level",
-            value=True,
-            key="video_auto_adapt_widget",
-            help="Let the epsilon-greedy bandit adapt the level after each turn.",
-        )
-    with settings_four:
-        use_llm = st.toggle(
-            "Local LLM",
-            value=False,
-            key="video_use_llm_widget",
-            help=f"Optional {MODEL_NAME} mode; the multilingual fallback works without it.",
         )
 
     state.target_language = target_language
-    greeting = VIDEO_CALL_GREETINGS.get(
-        target_language,
-        VIDEO_CALL_GREETINGS["English"],
-    )
+    state.difficulty = difficulty
+    selected_avatar = ASSET_DIR / "characters" / f"{character_name.lower()}.svg"
+    voice_id_note = f"ELEVENLABS_{re.sub(r'[^A-Za-z0-9]+', '_', character_name).upper()}_VOICE_ID"
 
-    # Before the learner's first live turn, keep Luna's greeting synchronized
-    # with the selected practice language.
+    greeting_templates = dict(VIDEO_CALL_GREETINGS)
+    greeting = greeting_templates.get(target_language, greeting_templates["English"])
     if int(st.session_state.get("video_reply_id", 0)) == 0:
         st.session_state.video_last_reply = greeting
-        if not any(
-            message.get("role") == "user"
-            for message in st.session_state.video_messages
-        ):
-            st.session_state.video_messages = [
-                {"role": "assistant", "content": greeting}
-            ]
+        if not any(message.get("role") == "user" for message in st.session_state.video_messages):
+            st.session_state.video_messages = [{"role": "assistant", "content": greeting}]
 
     if elevenlabs_configured():
         st.success(
-            "Natural Luna voice: ElevenLabs "
-            f"({get_model_id()}). "
-            "Add ELEVENLABS_API_KEY and optionally ELEVENLABS_VOICE_ID in Streamlit Secrets.",
+            f"Natural voice active for {character_name} using ElevenLabs. Optional character voice secret: `{voice_id_note}`.",
             icon=":material/graphic_eq:",
         )
     else:
         st.info(
-            "Natural Luna voice is optional. Without an ElevenLabs API key, "
-            "the call uses the browser voice. Add ELEVENLABS_API_KEY in Streamlit "
-            "Secrets to enable ElevenLabs audio.",
+            "Add ELEVENLABS_API_KEY to Streamlit Secrets for natural AI voices. The browser voice is used only as a fallback.",
             icon=":material/record_voice_over:",
         )
 
-    st.caption(
-        "Use the HTTPS Streamlit site in Chrome or Edge for the most reliable "
-        "continuous speech recognition. Camera video stays in your browser and "
-        "is not recorded or uploaded by this app."
-    )
-
-    if st.session_state.get("video_voice_error"):
-        st.warning("ElevenLabs voice was unavailable for the last turn; the browser voice fallback will be used. " + str(st.session_state.video_voice_error))
-
     if st.session_state.get("video_processing_error"):
-        st.error(
-            "Luna could not process the last sentence: "
-            f"{st.session_state.video_processing_error}"
-        )
+        st.error(f"Luna could not process the last sentence: {st.session_state.video_processing_error}")
 
     with st.container(key="realtime-video-call-container"):
         mount_realtime_call(
             target_language=target_language,
             locale=LANGUAGE_VOICE_LOCALES.get(target_language, "en-US"),
             difficulty=difficulty,
+            character_name=character_name,
             assistant_reply=str(st.session_state.video_last_reply),
             assistant_reply_id=int(st.session_state.video_reply_id),
             assistant_audio_data_uri=str(st.session_state.get("video_voice_audio", "")),
             voice_provider="ElevenLabs" if elevenlabs_configured() else "Browser voice fallback",
             history=st.session_state.video_messages,
-            avatar_path=LUNA_IMAGE,
+            avatar_path=selected_avatar,
             reset_token=int(st.session_state.video_reset_token),
             key=VIDEO_CALL_COMPONENT_KEY,
             on_utterance=handle_realtime_video_utterance,
-            height=1100,
+            height=1040,
         )
 
-    refreshed_state: LearnerState = st.session_state.learner_state
-    st.html(
-        progress_stat_strip_html(
-            min(100, refreshed_state.total_points),
-            {
-                "Live turns": refreshed_state.conversation_turns,
-                "Current level": refreshed_state.difficulty,
-                "Learner profile": predict_learner_profile(refreshed_state),
-            },
-            label="Call practice progress",
-            helper="Toward your 100-point live speaking goal",
-        )
-    )
+    st.html('<div class="computer-transcript-heading"><span class="eyebrow">CALL TRANSCRIPT</span><h2>Computer-generated transcript</h2><p>Every finalized sentence from the call is recorded here automatically.</p></div>')
+    transcript_rows = []
+    for message in st.session_state.video_messages:
+        transcript_rows.append({
+            "Speaker": "You" if message.get("role") == "user" else character_name,
+            "Transcript": str(message.get("content", "")),
+        })
+    if transcript_rows:
+        st.dataframe(pd.DataFrame(transcript_rows), width="stretch", hide_index=True)
 
     action_one, action_two = st.columns(2, gap="small")
     with action_one:
-        if st.button(
-            "Clear live transcript",
-            icon=":material/refresh:",
-            width="stretch",
-            key="clear-realtime-video-transcript",
-        ):
-            st.session_state.video_messages = [
-                {"role": "assistant", "content": greeting}
-            ]
+        if st.button("Clear call transcript", icon=":material/refresh:", width="stretch", key="clear-realtime-video-transcript"):
+            st.session_state.video_messages = [{"role": "assistant", "content": greeting}]
             st.session_state.video_last_reply = greeting
             st.session_state.video_reply_id = 0
             st.session_state.video_last_event_id = ""
             st.session_state.video_processing_error = None
             st.session_state.video_voice_audio = ""
             st.session_state.video_voice_error = None
-            st.session_state.video_reset_token = int(
-                st.session_state.get("video_reset_token", 0)
-            ) + 1
+            st.session_state.video_reset_token = int(st.session_state.get("video_reset_token", 0)) + 1
             st.rerun()
-
     with action_two:
-        if st.button(
-            "Reset all learning progress",
-            icon=":material/restart_alt:",
-            width="stretch",
-            key="reset-from-realtime-video-call",
-        ):
+        if st.button("Reset all learning progress", icon=":material/restart_alt:", width="stretch", key="reset-from-realtime-video-call"):
             reset_all_state()
             st.rerun()
-
-    st.info(
-        "Live transcript uses the browser Web Speech API. Interim words stay in "
-        "the browser; each finalized sentence is sent to the Python learning "
-        "engine, which applies the language guard, adaptive difficulty, feedback, "
-        "points, and a response in the selected target language. If live speech "
-        "recognition is unavailable, the same call panel provides a manual text fallback.",
-        icon=":material/privacy_tip:",
-    )
-
 
 
 def sync_game_settings(state: LearnerState) -> tuple[str, str]:
@@ -872,173 +758,150 @@ def sync_game_settings(state: LearnerState) -> tuple[str, str]:
         target_language = st.selectbox(
             "Game language",
             SUPPORTED_LANGUAGES,
-            index=(
-                SUPPORTED_LANGUAGES.index(state.target_language)
-                if state.target_language in SUPPORTED_LANGUAGES
-                else 1
-            ),
+            index=SUPPORTED_LANGUAGES.index(state.target_language) if state.target_language in SUPPORTED_LANGUAGES else 1,
             key="games_language_widget",
         )
     with top_two:
         difficulty = st.selectbox(
             "Challenge level",
             DIFFICULTY_LEVELS,
-            index=(
-                DIFFICULTY_LEVELS.index(state.difficulty)
-                if state.difficulty in DIFFICULTY_LEVELS
-                else 0
-            ),
+            index=DIFFICULTY_LEVELS.index(state.difficulty) if state.difficulty in DIFFICULTY_LEVELS else 0,
             key="games_difficulty_widget",
         )
-
-    if target_language != state.target_language:
-        state.target_language = target_language
-        st.session_state.pop("target_language_widget", None)
-    if difficulty != state.difficulty:
-        state.difficulty = difficulty
-        st.session_state.pop("manual_difficulty_widget", None)
+    state.target_language = target_language
+    state.difficulty = difficulty
     return target_language, difficulty
 
 
+def _game_vocab_pairs(language: str) -> list[tuple[str, str]]:
+    banks = {
+        "Spanish": [("manzana", "apple"), ("gato", "cat"), ("libro", "book"), ("agua", "water")],
+        "French": [("pomme", "apple"), ("chat", "cat"), ("livre", "book"), ("eau", "water")],
+        "German": [("apfel", "apple"), ("katze", "cat"), ("buch", "book"), ("wasser", "water")],
+        "Italian": [("mela", "apple"), ("gatto", "cat"), ("libro", "book"), ("acqua", "water")],
+        "Portuguese": [("maçã", "apple"), ("gato", "cat"), ("livro", "book"), ("água", "water")],
+        "Chinese": [("苹果", "apple"), ("猫", "cat"), ("书", "book"), ("水", "water")],
+        "Japanese": [("りんご", "apple"), ("ねこ", "cat"), ("本", "book"), ("水", "water")],
+        "Korean": [("사과", "apple"), ("고양이", "cat"), ("책", "book"), ("물", "water")],
+        "Arabic": [("تفاحة", "apple"), ("قطة", "cat"), ("كتاب", "book"), ("ماء", "water")],
+        "English": [("apple", "apple"), ("cat", "cat"), ("book", "book"), ("water", "water")],
+    }
+    return banks.get(language, banks["Spanish"])
+
+
+def _browser_speak_html(text: str, locale: str) -> str:
+    safe_text = escape(text).replace("\\", "\\\\").replace("'", "\\'")
+    safe_locale = escape(locale)
+    return f"""<button class=\\"listen-demo-button\\" onclick=\\"(function(){{const u=new SpeechSynthesisUtterance('{safe_text}');u.lang='{safe_locale}';u.rate=.9;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}})()\\">▶ Play phrase</button>"""
+
+
 def render_games() -> None:
-    render_page_intro(
-        "Mini-games",
-        "Practice that plays like a game",
-        (
-            "Use short challenges to build vocabulary, rehearse real-life "
-            "situations, and stretch sentence length without losing the flow."
-        ),
-    )
-    state: LearnerState = st.session_state.learner_state
+    render_page_intro("Mini-games", "Practice that plays like a game", "Small, focused challenges inspired by the Lovable demo: match words, listen and choose, and connect a word to the right picture.")
+    state = st.session_state.learner_state
     target_language, difficulty = sync_game_settings(state)
 
-    vocab_tab, roleplay_tab, expansion_tab = st.tabs(
-        ["Vocabulary quiz", "Role-play", "Sentence expansion"]
-    )
+    match_tab, listening_tab, picture_tab = st.tabs(["Word match", "Listening challenge", "Word-to-picture"])
 
-    with vocab_tab:
-        with st.container(key="game-vocab"):
-            st.markdown("### Vocabulary quiz")
-            st.caption("Translate one useful word and earn 15 points.")
-            st.html(
-                f'<div class="game-prompt">{escape(st.session_state.current_vocab_question)}</div>'
-            )
-
-            if st.button(
-                "Generate a new word",
-                type="primary",
-                icon=":material/casino:",
-                key="generate-vocab-question",
-            ):
-                question, answer = generate_vocab_question(target_language)
-                st.session_state.current_vocab_question = question
-                st.session_state.current_vocab_answer = answer
-                st.session_state.vocab_scored = False
-                st.session_state.pop("vocab_answer_input", None)
-                st.rerun()
-
-            vocab_answer = st.text_input(
-                "Your answer",
-                key="vocab_answer_input",
-                placeholder=f"Type the {target_language} translation",
-            )
-            if st.button(
-                "Check answer",
-                icon=":material/check_circle:",
-                key="check-vocab-answer",
-            ):
-                correct_answer = st.session_state.current_vocab_answer
-                if not correct_answer:
-                    st.warning("Generate a vocabulary question first.")
-                else:
-                    is_correct, message = check_vocab_answer(
-                        vocab_answer,
-                        correct_answer,
-                    )
-                    if is_correct and not st.session_state.vocab_scored:
-                        state.total_points += 15
+    pairs = _game_vocab_pairs(target_language)
+    with match_tab:
+        with st.container(key="game-word-match"):
+            st.markdown("### Word match")
+            st.caption("Connect each target-language word with its meaning.")
+            if "match_selection_left" not in st.session_state or st.session_state.get("match_language") != target_language:
+                st.session_state.match_selection_left = None
+                st.session_state.match_selection_right = None
+                st.session_state.match_hits = 0
+                st.session_state.match_language = target_language
+                st.session_state.matched_pairs = set()
+            left_col, right_col = st.columns(2, gap="medium")
+            left_words = [a for a, _ in pairs]
+            right_words = [b for _, b in reversed(pairs)]
+            with left_col:
+                st.caption(f"{target_language}")
+                for idx, word in enumerate(left_words):
+                    if st.button(word, key=f"match-left-{target_language}-{idx}", width="stretch"):
+                        st.session_state.match_selection_left = word
+            with right_col:
+                st.caption("Meaning")
+                for idx, word in enumerate(right_words):
+                    if st.button(word, key=f"match-right-{target_language}-{idx}", width="stretch"):
+                        st.session_state.match_selection_right = word
+            if st.session_state.get("match_selection_left") and st.session_state.get("match_selection_right"):
+                selected_left = st.session_state.match_selection_left
+                selected_right = st.session_state.match_selection_right
+                lookup = dict(pairs)
+                if lookup.get(selected_left) == selected_right:
+                    pair_key = (selected_left, selected_right)
+                    matched_pairs = st.session_state.get("matched_pairs", set())
+                    if pair_key not in matched_pairs:
+                        matched_pairs.add(pair_key)
+                        st.session_state.matched_pairs = matched_pairs
+                        st.session_state.match_hits += 1
+                        state.total_points += 5
                         state.mini_game_wins += 1
-                        st.session_state.vocab_scored = True
-                        st.success(
-                            f"{message} Total points: {state.total_points}"
-                        )
-                    elif is_correct:
-                        st.info(
-                            "Correct. This question has already awarded its points."
-                        )
-                    else:
-                        st.info(message)
+                    st.success("Match! +5 points")
+                else:
+                    st.warning("Not a match yet — try another pair.")
+            st.progress(min(1.0, st.session_state.get("match_hits", 0) / len(pairs)), text=f"{st.session_state.get('match_hits', 0)} / {len(pairs)} matched")
 
-    with roleplay_tab:
-        with st.container(key="game-roleplay"):
-            st.markdown("### Role-play")
-            st.caption("Rehearse a practical situation at your current level.")
-            st.html(
-                f'<div class="game-prompt">{escape(st.session_state.roleplay_prompt)}</div>'
-            )
-            if st.button(
-                "Generate a scenario",
-                type="primary",
-                icon=":material/theater_comedy:",
-                key="generate-roleplay",
-            ):
-                st.session_state.roleplay_prompt = generate_roleplay_prompt(
-                    target_language,
-                    difficulty,
-                )
-                st.rerun()
+    with listening_tab:
+        with st.container(key="game-listening-challenge"):
+            st.markdown("### Listening challenge")
+            st.caption("Play a phrase, then choose what you heard.")
+            listen_content = {
+                "English": ("Good morning, how are you?", ["Good morning, how are you?", "Good evening, where are you?", "Nice to meet you tomorrow.", "How old is your brother?"]),
+                "Spanish": ("¿Dónde está la estación?", ["¿Dónde está la estación?", "¿Dónde está el café?", "¿Cómo está la escuela?", "¿Cuándo es la fiesta?"]),
+                "French": ("Où est la gare ?", ["Où est la gare ?", "Où est la rue ?", "Où est le café ?", "Où est l'école ?"]),
+                "German": ("Wo ist der Bahnhof?", ["Wo ist der Bahnhof?", "Wo ist das Hotel?", "Wie geht es dir?", "Was ist das Buch?"]),
+                "Italian": ("Dov'è la stazione?", ["Dov'è la stazione?", "Dov'è il museo?", "Come stai oggi?", "Quando parte il treno?"]),
+                "Portuguese": ("Onde fica a estação?", ["Onde fica a estação?", "Onde fica o hotel?", "Como está o café?", "Quando começa a aula?"]),
+                "Chinese": ("车站在哪里？", ["车站在哪里？", "学校在哪里？", "你叫什么名字？", "今天星期几？"]),
+                "Japanese": ("駅はどこですか？", ["駅はどこですか？", "学校はどこですか？", "今日は何時ですか？", "お名前は何ですか？"]),
+                "Korean": ("기차역이 어디예요?", ["기차역이 어디예요?", "학교가 어디예요?", "오늘 뭐 해요?", "이름이 뭐예요?"]),
+                "Arabic": ("أين المحطة؟", ["أين المحطة؟", "أين المدرسة؟", "كيف حالك؟", "متى يبدأ الدرس؟"]),
+            }
+            phrase, choices = listen_content[target_language]
+            st.html(_browser_speak_html(phrase, LANGUAGE_VOICE_LOCALES.get(target_language, "en-US")), unsafe_allow_javascript=True)
+            selected = st.radio("What did you hear?", choices, key=f"listen-choice-{target_language}")
+            if st.button("Check", type="primary", key="check-listen"):
+                award_key = f"{target_language}:listening"
+                if selected == phrase:
+                    if st.session_state.get("listen_awarded") != award_key:
+                        state.total_points += 5
+                        state.mini_game_wins += 1
+                        st.session_state.listen_awarded = award_key
+                    st.success("Correct listening! +5 points")
+                else:
+                    st.info(f"Keep listening. The phrase was: {phrase}")
 
-            roleplay_draft = st.text_area(
-                "Draft your response",
-                key="roleplay_draft",
-                height=130,
-                placeholder="Write one sentence for the scenario...",
-            )
-            if st.button(
-                "Continue this in Conversation",
-                icon=":material/forum:",
-                key="roleplay-to-chat",
-            ):
-                prompt = st.session_state.roleplay_prompt
-                if roleplay_draft.strip():
-                    prompt = f"{prompt} My draft: {roleplay_draft.strip()}"
-                st.session_state.pending_challenge = prompt
-                st.switch_page(PRACTICE_PAGE)
-
-    with expansion_tab:
-        with st.container(key="game-expansion"):
-            st.markdown("### Sentence expansion")
-            st.caption("Add emotion, time, and a reason to build fluency.")
-            st.html(
-                f'<div class="game-prompt">{escape(st.session_state.sentence_prompt)}</div>'
-            )
-            if st.button(
-                "Generate a challenge",
-                type="primary",
-                icon=":material/auto_awesome:",
-                key="generate-sentence-challenge",
-            ):
-                st.session_state.sentence_prompt = sentence_expansion_challenge(
-                    target_language
-                )
-                st.rerun()
-
-            sentence_draft = st.text_area(
-                "Try the expanded sentence",
-                key="sentence_draft",
-                height=130,
-                placeholder="Write a longer sentence...",
-            )
-            if st.button(
-                "Ask Luna for feedback",
-                icon=":material/forum:",
-                key="sentence-to-chat",
-            ):
-                prompt = st.session_state.sentence_prompt
-                if sentence_draft.strip():
-                    prompt = f"{prompt} My draft: {sentence_draft.strip()}"
-                st.session_state.pending_challenge = prompt
-                st.switch_page(PRACTICE_PAGE)
+    with picture_tab:
+        with st.container(key="game-picture-match"):
+            st.markdown("### Word-to-picture match")
+            st.caption("Choose the picture that matches the target-language word.")
+            picture_bank = {
+                "apple": "🍎", "cat": "🐈", "book": "📘", "water": "💧",
+            }
+            chosen_pair = pairs[0]
+            word = chosen_pair[0]
+            answer = chosen_pair[1]
+            image_options = [answer] + [pair[1] for pair in pairs[1:]]
+            shuffled = list(reversed(image_options))
+            st.markdown(f"### {escape(word)}")
+            pic_cols = st.columns(4, gap="small")
+            for idx, meaning in enumerate(shuffled):
+                with pic_cols[idx]:
+                    emoji = picture_bank.get(meaning, "🖼️")
+                    st.markdown(f"<div class='picture-choice'>{emoji}<span>{escape(meaning)}</span></div>", unsafe_allow_html=True)
+                    if st.button("Choose", key=f"picture-{target_language}-{idx}", width="stretch"):
+                        award_key = f"{target_language}:picture"
+                        if meaning == answer:
+                            if st.session_state.get("picture_awarded") != award_key:
+                                state.total_points += 5
+                                state.mini_game_wins += 1
+                                st.session_state.picture_awarded = award_key
+                            st.success("Correct picture! +5 points")
+                        else:
+                            st.warning("Try another picture.")
 
 
 def build_progress_tip(scores: Dict[str, int]) -> tuple[str, str]:
@@ -1072,112 +935,49 @@ def render_progress() -> None:
     render_page_intro(
         "AI progress",
         "See your speaking level up",
-        (
-            "Your session data powers visual skill estimates, learner clustering, "
-            "adaptive-difficulty values, and a downloadable practice history."
-        ),
+        "A cleaner snapshot of your 100-point learning journey, your strongest skills, and what to practice next.",
     )
     state: LearnerState = st.session_state.learner_state
-    profile = predict_learner_profile(state)
     scores = calculate_skill_scores(state)
     overall = round(sum(scores.values()) / len(scores))
-    turns = max(state.conversation_turns, 1)
+    points_progress = min(100, max(0, state.total_points))
 
     with st.container(key="progress-overview"):
-        top_left, top_right = st.columns([0.68, 0.32], gap="large")
+        top_left, top_right = st.columns([0.74, 0.26], gap="large", vertical_alignment="center")
         with top_left:
-            st.markdown("### Current learner profile")
-            st.markdown(f"**{profile}**")
-            st.caption(
-                "This label comes from the original scikit-learn KMeans model "
-                "trained on synthetic learner profiles."
-            )
+            st.markdown("### Your 100-point journey")
+            st.progress(points_progress / 100.0, text=f"{points_progress} / 100 points")
+            st.caption("Points come from productive conversation turns and focused mini-game practice.")
         with top_right:
-            st.metric("Overall session score", overall, help="Average of five session indicators")
+            st.metric("Overall skill", f"{overall}%")
 
-        metric_cols = st.columns(4, gap="small")
-        metric_cols[0].metric("Total points", state.total_points)
-        metric_cols[1].metric("Conversation turns", state.conversation_turns)
-        metric_cols[2].metric(
-            "Average words / turn",
-            round(state.total_words / turns, 1),
-        )
-        metric_cols[3].metric("Mini-game wins", state.mini_game_wins)
+        st.markdown("### Skill snapshot")
+        skills = list(scores.items())
+        skill_cols = st.columns(4, gap="small")
+        for col, (skill, value) in zip(skill_cols, skills):
+            with col:
+                st.metric(skill, f"{value}%")
+                st.progress(value / 100.0)
 
-        st.markdown("### Skill indicators")
-        score_cols = st.columns(2, gap="large")
-        for index, (skill, value) in enumerate(scores.items()):
-            with score_cols[index % 2]:
-                st.write(f"**{skill}** - {value}%")
-                st.progress(value)
+        st.markdown("### Practice summary")
+        summary_cols = st.columns(3, gap="small")
+        summary_cols[0].metric("Conversation turns", state.conversation_turns)
+        summary_cols[1].metric("Words practiced", state.total_words)
+        summary_cols[2].metric("Mini-game wins", state.mini_game_wins)
 
         tip_title, tip_text = build_progress_tip(scores)
         st.html(progress_tip_html(tip_title, tip_text))
 
-    st.write("")
-    with st.container(key="progress-details"):
-        history_tab, adaptive_tab, model_tab = st.tabs(
-            ["Practice history", "Adaptive difficulty", "Clustering model"]
-        )
-
+    with st.container(key="progress-history"):
+        st.markdown("### Recent practice")
         history_df = learner_history_dataframe(state)
-        with history_tab:
-            if history_df.empty:
-                st.info(
-                    "No practice history yet. Complete a conversation turn to "
-                    "populate this dashboard."
-                )
-            else:
-                chart_df = history_df[["points"]].copy()
-                chart_df["Cumulative points"] = chart_df["points"].cumsum()
-                chart_df.index = range(1, len(chart_df) + 1)
-                st.line_chart(chart_df[["Cumulative points"]])
-                st.dataframe(
-                    history_df,
-                    width="stretch",
-                    hide_index=True,
-                )
-
-            csv = history_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Download practice history CSV",
-                data=csv,
-                file_name="lingglot_practice_history.csv",
-                mime="text/csv",
-                disabled=history_df.empty,
-                icon=":material/download:",
-            )
-
-        with adaptive_tab:
-            bandit_summary = st.session_state.bandit.summary()
-            adaptive_df = pd.DataFrame(
-                {
-                    "Difficulty": DIFFICULTY_LEVELS,
-                    "Times selected": [
-                        bandit_summary["counts"].get(level, 0)
-                        for level in DIFFICULTY_LEVELS
-                    ],
-                    "Estimated reward": [
-                        bandit_summary["estimated_values"].get(level, 0)
-                        for level in DIFFICULTY_LEVELS
-                    ],
-                }
-            )
-            st.dataframe(adaptive_df, width="stretch", hide_index=True)
-            st.caption(
-                "The epsilon-greedy bandit balances exploration with the level "
-                "that has produced the strongest reward estimate."
-            )
-            st.json(bandit_summary)
-
-        with model_tab:
-            _scaler, _kmeans, cluster_summary, cluster_labels = build_profile_model()
-            st.dataframe(cluster_summary, width="stretch")
-            st.json({int(key): value for key, value in cluster_labels.items()})
-            st.caption(
-                "The clustering data is synthetic and intended for prototype "
-                "demonstration rather than formal language assessment."
-            )
+        if history_df.empty:
+            st.info("Complete a conversation turn or mini-game to see recent practice here.")
+        else:
+            recent = history_df.tail(8).copy()
+            display_cols = [c for c in ["timestamp", "target_language", "difficulty", "points", "words", "feedback"] if c in recent.columns]
+            st.dataframe(recent[display_cols], width="stretch", hide_index=True)
+            st.caption("Only the most recent practice turns are shown to keep this page easy to scan.")
 
 
 def render_about() -> None:
@@ -1202,11 +1002,10 @@ def render_about() -> None:
 - Real-time browser camera + microphone preview through Streamlit Components V2
 - Interim and final live speech transcript for every learner turn
 - Automatic AI reply and browser text-to-speech in the selected target language
-- Optional local Hugging Face model mode using `google/flan-t5-small`
-- Vocabulary, role-play, and sentence-expansion mini-games
-- Epsilon-greedy adaptive difficulty selection
-- Scikit-learn learner-profile clustering
-- Session analytics and CSV history download
+- Character selector with compact, Lovable-inspired partner cards
+- Word match, listening challenge, and word-to-picture mini-games
+- Real-time video call with automatic transcript processing and natural voice support
+- 100-point progress journey with friendly skill snapshots
 """
         )
 
@@ -1216,7 +1015,7 @@ def render_about() -> None:
 <div class="about-architecture">
   <div class="arch-step"><b>1. Streamlit interface</b><span>Navigation, chat, a Components V2 real-time camera/transcript call, mini-games, analytics, and responsive visual components.</span></div>
   <div class="arch-step"><b>2. Python learning core</b><span>Conversation prompts, feedback, rewards, language guard, bandit, and clustering logic.</span></div>
-  <div class="arch-step"><b>3. Optional model layer</b><span>Local Hugging Face generation when the full requirements are installed; otherwise a fast fallback.</span></div>
+  <div class="arch-step"><b>3. Voice layer</b><span>ElevenLabs provides natural AI speech when configured; the browser remains a fallback.</span></div>
 </div>
 """
         )
