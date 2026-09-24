@@ -1,6 +1,5 @@
 [server]
 headless = true
-enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
@@ -21,7 +20,7 @@ baseFontSize = 16
 font = "sans-serif"
 headingFont = "serif"
 chartCategoricalColors = ["#FF6A3D", "#FF4F9A", "#F780BC", "#F4B98E", "#D193C2", "#FF9173"]
-chartSequentialColors = ["#FFF3E4", "#FFCBB6", "#FF9173", "#FF6A3D", "#D94683"]
+chartSequentialColors = ["#FFF7ED", "#FFE9DB", "#FFD4BF", "#FFC0A4", "#FFA487", "#FF8A6C", "#F86F5A", "#EE5D4B", "#E34B58", "#D94683"]
 
 [theme.sidebar]
 primaryColor = "#E85D42"
