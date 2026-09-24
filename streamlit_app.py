@@ -22,6 +22,7 @@ _REQUIRED_LOCAL_FILES = (
     ROOT / "lingglot" / "language_detection.py",
     ROOT / "lingglot" / "visuals.py",
     ROOT / "lingglot" / "realtime_call.py",
+    ROOT / "lingglot" / "elevenlabs_voice.py",
 )
 _missing_local_files = [path for path in _REQUIRED_LOCAL_FILES if not path.is_file()]
 if _missing_local_files:
@@ -75,6 +76,12 @@ from lingglot.core import (
     sentence_expansion_challenge,
 )
 from lingglot.realtime_call import mount_realtime_call
+from lingglot.elevenlabs_voice import (
+    audio_data_uri,
+    elevenlabs_configured,
+    get_model_id,
+    synthesize_elevenlabs,
+)
 from lingglot.visuals import (
     character_grid_html,
     character_svg,
@@ -177,6 +184,19 @@ def submit_video_call_turn(
     st.session_state.learner_state = updated_state
     st.session_state.bandit = updated_bandit
     st.session_state.video_last_reply = str(result["ai_reply"])
+    st.session_state.video_voice_audio = ""
+    st.session_state.video_voice_error = None
+    # Natural AI voice is optional: the app continues to work with the browser
+    # voice fallback when ElevenLabs is not configured.
+    if elevenlabs_configured():
+        try:
+            audio_bytes = synthesize_elevenlabs(
+                st.session_state.video_last_reply,
+                language_code=LANGUAGE_VOICE_LOCALES.get(target_language, "en-US"),
+            )
+            st.session_state.video_voice_audio = audio_data_uri(audio_bytes)
+        except Exception as exc:
+            st.session_state.video_voice_error = str(exc)
     st.session_state.video_reply_id = int(
         st.session_state.get("video_reply_id", 0)
     ) + 1
@@ -299,6 +319,8 @@ def initialize_session_state() -> None:
         "video_reset_token": 0,
         "video_last_event_id": "",
         "video_processing_error": None,
+        "video_voice_audio": "",
+        "video_voice_error": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -332,6 +354,8 @@ def reset_all_state() -> None:
         "video_reset_token",
         "video_last_event_id",
         "video_processing_error",
+        "video_voice_audio",
+        "video_voice_error",
         VIDEO_CALL_COMPONENT_KEY,
         "video_target_language_widget",
         "video_difficulty_widget",
@@ -738,11 +762,29 @@ def render_video_call() -> None:
                 {"role": "assistant", "content": greeting}
             ]
 
+    if elevenlabs_configured():
+        st.success(
+            "Natural Luna voice: ElevenLabs "
+            f"({get_model_id()}). "
+            "Add ELEVENLABS_API_KEY and optionally ELEVENLABS_VOICE_ID in Streamlit Secrets.",
+            icon=":material/graphic_eq:",
+        )
+    else:
+        st.info(
+            "Natural Luna voice is optional. Without an ElevenLabs API key, "
+            "the call uses the browser voice. Add ELEVENLABS_API_KEY in Streamlit "
+            "Secrets to enable ElevenLabs audio.",
+            icon=":material/record_voice_over:",
+        )
+
     st.caption(
         "Use the HTTPS Streamlit site in Chrome or Edge for the most reliable "
         "continuous speech recognition. Camera video stays in your browser and "
         "is not recorded or uploaded by this app."
     )
+
+    if st.session_state.get("video_voice_error"):
+        st.warning("ElevenLabs voice was unavailable for the last turn; the browser voice fallback will be used. " + str(st.session_state.video_voice_error))
 
     if st.session_state.get("video_processing_error"):
         st.error(
@@ -757,6 +799,8 @@ def render_video_call() -> None:
             difficulty=difficulty,
             assistant_reply=str(st.session_state.video_last_reply),
             assistant_reply_id=int(st.session_state.video_reply_id),
+            assistant_audio_data_uri=str(st.session_state.get("video_voice_audio", "")),
+            voice_provider="ElevenLabs" if elevenlabs_configured() else "Browser voice fallback",
             history=st.session_state.video_messages,
             avatar_path=LUNA_IMAGE,
             reset_token=int(st.session_state.video_reset_token),
@@ -794,6 +838,8 @@ def render_video_call() -> None:
             st.session_state.video_reply_id = 0
             st.session_state.video_last_event_id = ""
             st.session_state.video_processing_error = None
+            st.session_state.video_voice_audio = ""
+            st.session_state.video_voice_error = None
             st.session_state.video_reset_token = int(
                 st.session_state.get("video_reset_token", 0)
             ) + 1

@@ -23,6 +23,7 @@ REALTIME_CALL_HTML = r"""
       <div>
         <strong>Live call with Luna</strong>
         <span id="lesson-label">Language practice</span>
+        <span class="voice-provider" id="voice-provider">Browser voice</span>
       </div>
     </div>
     <div class="rtc-timer" aria-label="Call duration"><span class="timer-dot"></span><span id="call-timer">00:00</span></div>
@@ -173,6 +174,7 @@ button, textarea, input { font: inherit; }
 .rtc-brand-block { gap: 12px; min-width: 0; }
 .rtc-brand-block strong { display: block; font-family: var(--st-heading-font, Georgia, serif); font-size: 1.22rem; }
 .rtc-brand-block > div span { display: block; margin-top: 2px; color: #8a6961; font-size: .8rem; }
+.voice-provider { display: inline-block !important; width: fit-content; margin-top: 5px !important; padding: 3px 7px; border-radius: 999px; background: #fff0f7; color: #a33e72 !important; font-size: .6rem !important; font-weight: 800; }
 
 .rtc-live-pill {
   display: inline-flex;
@@ -565,6 +567,10 @@ export default function(component) {
     if (runtime.timerInterval) clearInterval(runtime.timerInterval);
     if (runtime.detachmentInterval) clearInterval(runtime.detachmentInterval);
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (runtime.audioElement) {
+      try { runtime.audioElement.pause(); runtime.audioElement.src = ""; } catch (_) {}
+      runtime.audioElement = null;
+    }
   }
 
   function renderHistory(history) {
@@ -615,6 +621,86 @@ export default function(component) {
     container.scrollTop = container.scrollHeight;
   }
 
+  function playElevenLabsAudio(dataUri) {
+    const src = String(dataUri || "").trim();
+    if (!src) return Promise.reject(new Error("No ElevenLabs audio supplied."));
+
+    if (runtime.audioElement) {
+      try {
+        runtime.audioElement.pause();
+        runtime.audioElement.currentTime = 0;
+      } catch (_) {}
+    }
+
+    const audio = new Audio(src);
+    audio.preload = "auto";
+    runtime.audioElement = audio;
+    audio.onplay = () => {
+      runtime.speaking = true;
+      runtime.voicePlaying = true;
+      q("#ai-tile").classList.remove("is-thinking");
+      q("#ai-tile").classList.add("is-speaking");
+      q("#ai-state").textContent = "Speaking";
+      setStatus(`Luna is speaking naturally in ${runtime.targetLanguage}.`, "speaking");
+    };
+    audio.onended = () => {
+      runtime.voicePlaying = false;
+      finishAssistantSpeech();
+    };
+    audio.onerror = () => {
+      runtime.voicePlaying = false;
+      finishAssistantSpeech();
+    };
+    return audio.play();
+  }
+
+  function speakAssistantWithFallback(text, force = false, audioDataUri = "") {
+    const reply = String(text || "").trim();
+    if (!reply) {
+      finishAssistantSpeech();
+      return;
+    }
+
+    if (!force && !runtime.callActive) return;
+    stopRecognition(true);
+    runtime.speaking = true;
+    runtime.awaitingReply = false;
+    q("#ai-tile").classList.remove("is-thinking");
+    q("#ai-tile").classList.add("is-speaking");
+
+    if (audioDataUri) {
+      playElevenLabsAudio(audioDataUri)
+        .then(() => {})
+        .catch(() => {
+          speakAssistantBrowser(reply);
+        });
+      return;
+    }
+    speakAssistantBrowser(reply);
+  }
+
+  function speakAssistantBrowser(text) {
+    const reply = String(text || "").trim();
+    if (!reply || !window.speechSynthesis) {
+      finishAssistantSpeech();
+      return;
+    }
+    q("#ai-state").textContent = "Speaking";
+    setStatus(`Luna is replying in ${runtime.targetLanguage}.`, "speaking");
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(reply);
+    utterance.lang = runtime.locale || "en-US";
+    utterance.rate = 0.92;
+    utterance.pitch = 1.03;
+    utterance.volume = 1;
+    const voice = chooseVoice(runtime.locale);
+    if (voice) utterance.voice = voice;
+    utterance.onend = finishAssistantSpeech;
+    utterance.onerror = finishAssistantSpeech;
+    runtime.currentUtterance = utterance;
+    window.speechSynthesis.speak(utterance);
+  }
+
   function chooseVoice(locale) {
     if (!window.speechSynthesis) return null;
     const voices = window.speechSynthesis.getVoices();
@@ -639,33 +725,8 @@ export default function(component) {
     }
   }
 
-  function speakAssistant(text, force = false) {
-    const reply = String(text || "").trim();
-    if (!reply || !window.speechSynthesis) {
-      finishAssistantSpeech();
-      return;
-    }
-    if (!force && !runtime.callActive) return;
-
-    stopRecognition(true);
-    runtime.speaking = true;
-    q("#ai-tile").classList.remove("is-thinking");
-    q("#ai-tile").classList.add("is-speaking");
-    q("#ai-state").textContent = "Speaking";
-    setStatus(`Luna is replying in ${runtime.targetLanguage}.`, "speaking");
-
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(reply);
-    utterance.lang = runtime.locale || "en-US";
-    utterance.rate = 0.92;
-    utterance.pitch = 1.03;
-    utterance.volume = 1;
-    const voice = chooseVoice(runtime.locale);
-    if (voice) utterance.voice = voice;
-    utterance.onend = finishAssistantSpeech;
-    utterance.onerror = finishAssistantSpeech;
-    runtime.currentUtterance = utterance;
-    window.speechSynthesis.speak(utterance);
+  function speakAssistant(text, force = false, audioDataUri = "") {
+    speakAssistantWithFallback(text, force, audioDataUri);
   }
 
   function createRecognition() {
@@ -849,7 +910,7 @@ export default function(component) {
       const openingReply = String(runtime.data?.assistant_reply || "").trim();
       if (openingReply) {
         setStatus(`Camera is live. Luna is greeting you in ${runtime.targetLanguage}.`, "speaking");
-        setTimeout(() => speakAssistant(openingReply, true), 120);
+        setTimeout(() => speakAssistant(openingReply, true, runtime.data?.assistant_audio_data_uri || ""), 120);
       } else {
         setStatus(`Camera is live. Listening for ${runtime.targetLanguage}.`, "live");
         startRecognition();
@@ -929,7 +990,7 @@ export default function(component) {
         submitUtterance(q("#manual-transcript").value, "manual");
       }
     };
-    q("#replay-ai").onclick = () => speakAssistant(runtime.data?.assistant_reply || "", true);
+    q("#replay-ai").onclick = () => speakAssistant(runtime.data?.assistant_reply || "", true, runtime.data?.assistant_audio_data_uri || "");
   }
 
   function restoreRuntimeUi() {
@@ -976,6 +1037,8 @@ export default function(component) {
       transcriptPaused: false,
       awaitingReply: false,
       speaking: false,
+      voicePlaying: false,
+      audioElement: null,
       cleaned: false,
       locale: safeData.locale || "en-US",
       targetLanguage: safeData.target_language || "English",
@@ -1005,6 +1068,7 @@ export default function(component) {
   runtime.difficulty = safeData.difficulty || "Beginner";
 
   q("#lesson-label").textContent = `${runtime.targetLanguage} · ${runtime.difficulty}`;
+  q("#voice-provider").textContent = String(safeData.voice_provider || "Browser voice");
   q("#latest-ai-reply").textContent = String(safeData.assistant_reply || "Start the call and say a sentence.");
   if (safeData.avatar_data_uri) q("#luna-avatar").src = safeData.avatar_data_uri;
   renderHistory(safeData.history || []);
@@ -1032,7 +1096,7 @@ export default function(component) {
     runtime.awaitingReply = false;
     q("#ai-tile").classList.remove("is-thinking");
     const reply = String(safeData.assistant_reply || "").trim();
-    if (reply) speakAssistant(reply, false);
+    if (reply) speakAssistant(reply, false, safeData.assistant_audio_data_uri || "");
     else finishAssistantSpeech();
   }
 }
@@ -1083,6 +1147,8 @@ def mount_realtime_call(
     difficulty: str,
     assistant_reply: str,
     assistant_reply_id: int,
+    assistant_audio_data_uri: str = "",
+    voice_provider: str = "Browser voice",
     history: Sequence[Mapping[str, Any]],
     avatar_path: str | Path,
     reset_token: int,
@@ -1099,6 +1165,8 @@ def mount_realtime_call(
             "difficulty": difficulty,
             "assistant_reply": assistant_reply,
             "assistant_reply_id": int(assistant_reply_id),
+            "assistant_audio_data_uri": assistant_audio_data_uri,
+            "voice_provider": voice_provider,
             "history": serialize_call_history(history),
             "avatar_data_uri": svg_data_uri(avatar_path),
             "reset_token": int(reset_token),

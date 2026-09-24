@@ -126,3 +126,7 @@ python -m pytest -q
 - Mentor and advisor: Qingyang Xiao
 
 This is a research and product prototype. Learner profiles and skill indicators are demonstrations, not standardized language-proficiency assessments.
+
+## Optional natural Luna voice with ElevenLabs
+
+The Video call experience can use ElevenLabs Text-to-Speech for natural AI replies. The default model is `eleven_flash_v2_5` for lower conversational latency, with `eleven_v3` available as an override. Add `ELEVENLABS_API_KEY` and optionally `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL_ID` to Streamlit Secrets. Without these secrets, the app falls back to browser speech synthesis. The integration follows ElevenLabs' current Text-to-Speech API pattern. See `docs/ELEVENLABS_VOICE.md`.
